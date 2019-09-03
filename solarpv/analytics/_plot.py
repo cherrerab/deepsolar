@@ -17,13 +17,13 @@ from math import (pi, cos, sin, tan, acos)
 from datetime import (datetime, time, timedelta)
 
 from solarpv.database import (reshape_radiation)
-from solarpv.analytics import (extraterrestrial_irrad)
+from solarpv.analytics import (ext_irradiance, ext_irradiation)
 
 from solarpv import (validate_date, get_date_index)
 
 #------------------------------------------------------------------------------
 # obtener gráfico fracción difusa vs claridad
-def plot_fracDifusa_claridad(database, lat=-33.45775, lon=70.66466111):
+def plot_fraccion_difusa_claridad(database, lat=-33.45775, lon=70.66466111):
     """
     -> None
     
@@ -44,7 +44,7 @@ def plot_fracDifusa_claridad(database, lat=-33.45775, lon=70.66466111):
     frac_dif = np.divide(diffuse_rad, global_rad)
     
     timestamp = database['Timestamp'].values
-    ext_rad = [extraterrestrial_irrad(t, lat, lon) for t in timestamp]
+    ext_rad = [ext_irradiance(t, lat, lon) for t in timestamp]
     claridad = np.divide( global_rad, np.asarray(ext_rad) )
     
     plt.figure()
@@ -59,7 +59,7 @@ def plot_fracDifusa_claridad(database, lat=-33.45775, lon=70.66466111):
 
 #------------------------------------------------------------------------------
 # obtener gráfico 2D de radiación en el tiempo
-def plot_2DRadData(database, unit='', **kargs):
+def plot_2D_radiation_data(database, unit='', **kargs):
     """
     -> None
     
@@ -115,7 +115,7 @@ def plot_2DRadData(database, unit='', **kargs):
     
 #------------------------------------------------------------------------------
 # obtener gráfico 1D de radiación en el tiempo
-def plot_1DRadiationData(database, colname, start_date, stop_date, 
+def plot_1D_radiation_data(database, colname, start_date, stop_date, 
                          extraRad=True, lat=-33.45775, lon=70.66466111):
     """
     -> None
@@ -168,9 +168,9 @@ def plot_1DRadiationData(database, colname, start_date, stop_date,
         timestep = (datetime.strptime(timestamps[1], date_format)
                     - datetime.strptime(timestamps[0], date_format))
         
-        secs = timestep.seconds/3600
+        secs = timestep.seconds
         
-        ext_rad = [extraterrestrial_irrad(t, lat, lon)*secs for t in timestamps]
+        ext_rad = [ext_irradiation(t, secs, lat, lon) for t in timestamps]
         plt.plot(X, ext_rad, c='k', ls='--', lw=0.8, label='Extraterrestrial')   
     
     # colocar etiquetas en el gráfico -----------------------------------------
@@ -195,7 +195,7 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
     :param DataFrame db_pv:
         base de datos que contiene el registro de 'Potencia' fotovoltaica.
     :param DataFrame db_solar:
-        base de datos que contiene el registro de radiación 'Global'.
+        base de datos que contiene el registro de irradiancia 'Global'.
     :param float lat:
         latitud del punto geográfico.
     :param float lon:
@@ -248,35 +248,47 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
         if (date >= stop_date) and (solar_index[1] == -1):
             solar_index[1] = i-1
      
-    print(solar_index)
-    print(pv_index)
     assert (solar_index[1]-solar_index[0]) == (pv_index[1]-pv_index[0])
     
     # -------------------------------------------------------------------------
     
     # obtener performance ratio
-    global_rad = db_solar['Global'].astype(float)
+    global_rad = db_solar['Global']
     global_rad = global_rad.values[ solar_index[0]:solar_index[1] ]
     
-    pv_power = db_pv['Potencia'].astype(float)
+    pv_power = db_pv['Potencia']
     pv_power = pv_power.values[ pv_index[0]:pv_index[1] ]
     
-    performance_ratio = np.divide(pv_power, global_rad)
+    plant_factor = 1000.0/16.2
+    performance_ratio = []
+    for i in range( len(pv_power) ):
+        if ( global_rad[i] != 0.0 ):
+            performance_ratio.append( plant_factor*(pv_power[i]/global_rad[i]) )
+        else:
+            performance_ratio.append(np.nan)
     
+    performance_ratio = np.array(performance_ratio)
+        
     # obtener claridad
     timestamp = db_solar['Timestamp'].values[ solar_index[0]:solar_index[1] ]
-    ext_rad = [extraterrestrial_irrad(t, lat, lon) for t in timestamp]
+    ext_rad = [ext_irradiance(t, lat, lon) for t in timestamp]
     
-    claridad = np.divide( global_rad, np.asarray(ext_rad) )
+    claridad = []
+    for i in range( len(pv_power) ):
+        if ( ext_rad[i] != 0.0 ):
+            claridad.append( global_rad[i]/ext_rad[i] )
+        else:
+            claridad.append( np.nan )
+            
+    claridad = np.array(claridad)
     
     # plotear
     plt.figure()
     plt.scatter(claridad, performance_ratio, c='k', s=0.8)
-    plt.xlim([0.0,1.0])
-    plt.ylim([0.0,1.0])
     
     plt.xlabel(u'Índice de Claridad')
     plt.ylabel(u'Performance Ratio')
+    plt.xlim([0, 1.0])
 
     return None
     
