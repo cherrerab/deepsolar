@@ -7,7 +7,7 @@ Cristian Herrera
 v1.0 - update, Aug 01 2019
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import (pi, cos, sin, tan, acos)
 #------------------------------------------------------------------------------
 # validar formato de fecha
@@ -94,8 +94,7 @@ def get_date_index(timestamps, search_date, nearest=False):
        
 #------------------------------------------------------------------------------
 # obtener irradiación extraterrestre
-def extraterrestrial_irrad(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0,
-                           Zs=0.0):
+def ext_irradiance(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     """
     -> float
     
@@ -155,15 +154,16 @@ def extraterrestrial_irrad(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0,
     delta = (0.006918 - 0.399912*cos(B) + 0.070257*sin(B) - 0.006758*cos(2*B)
             + 0.000907*sin(2*B) - 0.002697*cos(3*B) + 0.00148*sin(3*B))
     
-    # ángulo de alba (w_ss)
-    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
-    
-    # si el sol no ha salido la irradiancia es cero
-    if abs(w) >= abs(w_ss):
-        return 0.0
+#    # ángulo de alba (w_ss)
+#    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
+#    
+#    # si el sol no ha salido la irradiancia es cero
+#    if abs(w) >= abs(w_ss):
+#        return 0.0
     
     # ángulo de incidencia (theta) sobre la superficie
     # ángulo entre la radiación del sol y la normal a la superficie
+    
     cos_theta = (sin(delta)*sin(lat)*cos(Bs)
                  - sin(delta)*cos(lat)*sin(Bs)*cos(Zs)
                  + cos(delta)*cos(lat)*cos(Bs)*cos(w)
@@ -174,6 +174,105 @@ def extraterrestrial_irrad(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0,
     if cos_theta < 0.0:
         return 0.0
     
-    return G_on*cos_theta    
+    return G_on*cos_theta
+
+#------------------------------------------------------------------------------
+# obtener irradiación extraterrestre
+def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
+    """
+    -> float
+    
+    Calcula a partir del timestamp y la posición geográfica entregada, la
+    irradiación extraterrestre incidente en el plano especificado en Wh/m2 
+    durante el tiempo especificado.
+    
+    :param str timestamp:
+        string que contiene la hora y fecha del comienzo del periodo (UTC).
+    :param int secs:
+        cantidad de segundos que dura el periodo a calcular.
+    :param float lat:
+        latitud del punto geográfico.
+    :param float lon:
+        longitud del punto geográfico en grados oeste [0,360).
+    :param float Bs: (default, 0.0)
+        inclinación de la superficie.
+        ángulo de inclinación respecto al plano horizontal de la superficie 
+        sobre la cual calcular la irradiancia (grados).
+    :param float Zs: (default, 0.0)
+        azimut de la superficie.
+        ángulo entre la proyección de la normal de la superficie en el plano
+        horizontal y la dirección hacia el ecuador (grados).
+        
+    :returns:
+        float del valor de irradiación extraterrestre en Wh/m2.
+    """
+    
+    # corregir latitud y longitud
+    lat = lat*(pi/180.0)
+    lon = lon*(pi/180.0)
+    
+    # tiempo
+    date_format = '%d-%m-%Y %H:%M'
+    date = datetime.strptime(timestamp, date_format)
+    date_tt = date.timetuple()
+    
+    # dia del año
+    min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+    n_day = date_tt.tm_yday + min_day/(24*60.0)
+    
+    # extraterrestrial irradiance W/m2 on the plane normal to the radiation
+    # Spencer (1971)
+    G_sc = 1367.0
+    B = (n_day - 1)*(2*pi/365.0)
+    G_on = G_sc*(1.000110 + 0.034221*cos(B) + 0.001280*sin(B) +
+                 0.000719*cos(2*B) + 0.000077*sin(2*B))
+    
+    # solar time - Spencer (1971)
+    E = 229.2*(0.000075 + 0.001868*cos(B) - 0.032077*sin(B) - 0.014615*cos(2*B)
+        - 0.04089*sin(2*B))
+    
+    solar_min = min_day + 4*(0 - lon) + E
+    solar_hour_1 = solar_min/60.0
+    
+    solar_hour_2 = (solar_min + secs/60.0)/60.0
+    
+    # ángulo solar (w)
+    w1 = 15*(solar_hour_1 - 12.0)*(pi/180.0)
+    w2 = 15*(solar_hour_2 - 12.0)*(pi/180.0)
+    
+    # declinacion - Spencer (1971)
+    delta = (0.006918 - 0.399912*cos(B) + 0.070257*sin(B) - 0.006758*cos(2*B)
+            + 0.000907*sin(2*B) - 0.002697*cos(3*B) + 0.00148*sin(3*B))
+    
+#    # ángulo de alba (w_ss)
+#    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
+#    
+#    # ajustar periodo a limites donde existe sol
+#    if abs(w1) >= abs(w_ss):
+#        w1 = abs(w_ss) if w1 >= abs(w_ss) else -abs(w_ss)
+#        
+#    if abs(w2) > abs(w_ss):
+#        w2 = abs(w_ss) if w2 >= abs(w_ss) else -abs(w_ss)
+    
+    
+    factor = 43200.0/pi
+    
+    # ángulo de incidencia (theta) sobre la superficie
+    # ángulo entre la radiación del sol y la normal a la superficie
+    
+    cos_theta = (sin(delta)*sin(lat)*cos(Bs)*secs
+                 - sin(delta)*cos(lat)*sin(Bs)*cos(Zs)*secs
+                 + cos(delta)*cos(lat)*cos(Bs)*(sin(w2) - sin(w1))*factor
+                 + cos(delta)*sin(lat)*sin(Bs)*cos(Zs)*(sin(w2) - sin(w1))*factor
+                 - cos(delta)*sin(Bs)*sin(Zs)*(cos(w2) - cos(w1))*factor)
+    
+    # retornar irradiancia solar, Wh/m2
+    if (cos_theta < 0.0):
+        return 0.0
+    
+    if abs(w1) == abs(w2):
+        return 0.0
+    
+    return G_on*cos_theta/3600.0
     
     
