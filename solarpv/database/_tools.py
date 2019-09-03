@@ -13,14 +13,17 @@ pd.options.mode.chained_assignment = None
 
 from datetime import datetime, timedelta
 
-from solarpv import (validate_date, get_date_index, extraterrestrial_irrad)
+from solarpv import (validate_date, get_date_index, ext_irradiance)
 
 from math import ceil
 from progressbar import ProgressBar
 import os
+import numpy as np
+
+from time import sleep
 
 #------------------------------------------------------------------------------
-# abrir cuadro de pago
+# abrir archivo csv
 def read_csv_file(csv_path, try_header='', return_encoding=False, **kargs):
     """
     -> DataFrame or [DataFrame, str]
@@ -204,9 +207,11 @@ def parse_database(path, sheet_name, header, usecols, colnames):
 # -----------------------------------------------------------------------------
 # base de datos estación solarimétrica
 def generate_solarimetric_database(path, sheet_name, header, usecols,
-                                   fecha_inicial, keep_negatives=True,
-                                   adjust_time=0):
+                                   keep_negatives=True, adjust_time=0,
+                                   fix_timestamps=True):
     """
+    -> pandas.DataFrame
+    
     Filtra y prepara la base de datos para posteriormente procesar los
     regristros de irradiancia.
     Crea un archivo csv con las columnas:
@@ -221,19 +226,19 @@ def generate_solarimetric_database(path, sheet_name, header, usecols,
         las columnas.
     :param str usecols:
         contiene las columnas que han de utilizarse para procesar la base de
-        datos. 
-    :param str fecha_inicial:
-        fecha y hora desde la cual considerar los datos.
+        datos.
     :param bool keep_negatives: (default, True)
         si mantener valores negativos de irradiacion.
     :param str adjust_time:
         permite corregir en segundos el timestamp asociado a cada dato.
+    :param bool fix_timestamps:
+        si corregir la serie de timestamps en el dataset.
         
           
     :returns: DataFrame de la base de datos
     """
     print('\n' + '='*80)
-    print('Processing Solarimetric Station Data')
+    print('Parsing Solarimetric Station Data')
     print('='*80 + '\n')
     
     # abrir archivo de base de datos ------------------------------------------
@@ -244,7 +249,6 @@ def generate_solarimetric_database(path, sheet_name, header, usecols,
     assert db is not None
     
     # filtrar y formatear -----------------------------------------------------
-    ifecha = validate_date(fecha_inicial)
     
     remove_index = []
     bar = ProgressBar()
@@ -255,8 +259,6 @@ def generate_solarimetric_database(path, sheet_name, header, usecols,
             fecha = validate_date(db.at[i, u'Timestamp'])
             date_format = '%d-%m-%Y %H:%M'
             fecha = datetime.strptime(fecha, date_format)
-            
-            assert fecha >= datetime.strptime(ifecha, date_format)
             
             # formatear timestamp
             timestamp = fecha + timedelta(seconds=adjust_time)
@@ -277,13 +279,16 @@ def generate_solarimetric_database(path, sheet_name, header, usecols,
             value = float(db.at[i, u'Direct'])
             db.at[i, u'Direct'] = value if keep_negatives else max(0.0, value)
                         
-        except (ValueError, TypeError, AssertionError):
+        except (ValueError, TypeError):
             remove_index.append(i)
             print('MissingData: Wrong value format in '+db.at[i, u'Timestamp'])
             continue
         
     # remover filas filtradas            
     db.drop(index = remove_index, inplace=True)
+    
+    if not(fix_timestamps):
+        return db
     
     # -------------------------------------------------------------------------
     # añadir timestamps faltantes
@@ -293,13 +298,14 @@ def generate_solarimetric_database(path, sheet_name, header, usecols,
                 - datetime.strptime(db.at[0,u'Timestamp'], date_format) )
     timestep = timestep.seconds
     
-    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
-                        freq=timedelta(seconds=timestep))
     
-    db.index = pd.DatetimeIndex( db[u'Timestamp'].values )
+    time_freq = str(timestep) + 'S'
+    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
+                        freq=time_freq)
+    
+    db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
     db = db.reindex( idx, fill_value=0.0 )
-    db[u'Timestamp'] = idx
-    db[u'Timestamp'] = db[u'Timestamp'].apply(lambda x: x.strftime(date_format))
+    db[u'Timestamp'] = idx.strftime(date_format)
     
     # resetear index a enteros
     db = db.reset_index()
@@ -309,8 +315,8 @@ def generate_solarimetric_database(path, sheet_name, header, usecols,
 
 # -----------------------------------------------------------------------------
 # base de datos generación fotovoltaica
-def generate_photovoltaic_database(dir_path, usecols, fecha_inicial,
-                                   keep_negatives=True, adjust_time=0):
+def generate_photovoltaic_database(dir_path, usecols, keep_negatives=True,
+                                   adjust_time=0, fix_timestamps=True):
     """
     Lee los archivos que contienen los datos de potencia (kW) del arreglo
     fotovoltaico y construye la base de datos temporal correspondiente.
@@ -321,18 +327,18 @@ def generate_photovoltaic_database(dir_path, usecols, fecha_inicial,
     :param str usecols:
         contiene las columnas que han de utilizarse para procesar la base de
         datos. 
-    :param str fecha_inicial:
-        fecha y hora desde la cual considerar los datos.
     :param bool keep_negatives: (default, True)
         si mantener valores negativos de irradiacion.
     :param str adjust_time:
         permite corregir en segundos el timestamp asociado a cada dato.
+    :param bool fix_timestamps:
+        si corregir la serie de timestamps en el dataset.
         
     :returns:
         DataFrame con los datos procesados.
     """
     print('\n' + '='*80)
-    print('Processing Photovoltaic Plant Data')
+    print('Parsing Photovoltaic Plant Data')
     print('='*80 + '\n')
     
     
@@ -387,13 +393,15 @@ def generate_photovoltaic_database(dir_path, usecols, fecha_inicial,
     date_start = ' '.join([date_start, first_hour])
     date_start = datetime.strptime(date_start, date_format)
     
-    # obtner base de tiempo del data frame
+    # obtener base de tiempo del data frame
     timestep = (  datetime.strptime(db.at[1,u'Timestamp'], '%H:%M/ %d')
                   - datetime.strptime(db.at[0,u'Timestamp'], '%H:%M/ %d') )
     timestep = timestep.seconds
     
+    # formatear columnas
     bar = ProgressBar()
     for i in bar( db.index ):
+        
         # formatear timestamp
         timestamp = date_start + timedelta( seconds = i*timestep )
         new_date = datetime.strftime(timestamp,'%H:%M/ %d')
@@ -414,26 +422,31 @@ def generate_photovoltaic_database(dir_path, usecols, fecha_inicial,
         potencia = '0,000' if potencia=='' else potencia
         potencia = float( potencia.replace(',', '.') )
         db.at[i, u'Potencia'] = potencia
+        
+    if not(fix_timestamps):
+        return db
     
+    # -------------------------------------------------------------------------
+    
+    # añadir timestamps faltantes
+    time_freq = str(timestep) + 'S'
+    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
+                        freq=time_freq)
+    
+    db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
+    db = db.reindex( idx, fill_value=0.0 )
+    db[u'Timestamp'] = idx.strftime(date_format)
+    
+    # resetear index a enteros
+    db = db.reset_index()
+    db.drop('index',axis=1, inplace=True)
     
     return db
-#    # añadir timestamps faltantes
-#    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
-#                        freq=timedelta(seconds=timestep))
-#    
-#    db.index = pd.DatetimeIndex( db[u'Timestamp'].values )
-#    db = db.reindex( idx, fill_value=0.0 )
-#    db[u'Timestamp'] = idx
-#    db[u'Timestamp'] = db[u'Timestamp'].apply(lambda x: x.strftime(date_format))
-#    
-#    # resetear index a enteros
-#    db = db.reset_index()
-#    db.drop('index',axis=1, inplace=True)
         
     
 # -----------------------------------------------------------------------------
 # transformar base de datos de radiancia a radiación
-def Radiance2Radiation(database):
+def radiance_to_radiation(database):
     """
     Transforma la base de datos de radiancia (W/m2) a de radiación (Wh/m2).
     
@@ -444,19 +457,20 @@ def Radiance2Radiation(database):
         DataFrame con los datos procesados.
     """
     
+    db = database.copy()
     # obtener timestep en el dataset
-    timestamps = database['Timestamp'].values
+    timestamps = db['Timestamp'].values
     
     date_format = '%d-%m-%Y %H:%M'
     timestep = (  datetime.strptime(timestamps[1], date_format)
                 - datetime.strptime(timestamps[0], date_format))
     secs = timestep.seconds/3600
     
-    database['Global'] = [ rad*secs for rad in database['Global'].values]
-    database['Diffuse'] = [ rad*secs for rad in database['Diffuse'].values]
-    database['Direct'] = [ rad*secs for rad in database['Direct'].values]
+    db['Global'] = [ rad*secs for rad in db['Global'].values]
+    db['Diffuse'] = [ rad*secs for rad in db['Diffuse'].values]
+    db['Direct'] = [ rad*secs for rad in db['Direct'].values]
     
-    return database
+    return db
 
 # -----------------------------------------------------------------------------
 # ordenar base de datos radiacion por día
@@ -480,8 +494,9 @@ def reshape_radiation(database, colname, initial_date, final_date):
     :returns: DataFrame de la base de datos procesada
     """
     print('\n' + '='*80)
-    print('Processing Data')
+    print('Reshaping Data')
     print('='*80 + '\n')
+    sleep(0.25)
     
     # inicializar nueva base de datos -----------------------------------------
     date_format = '%d-%m-%Y %H:%M'
@@ -499,16 +514,24 @@ def reshape_radiation(database, colname, initial_date, final_date):
     
     
     # filas
-    delta_tmstmp = ( datetime.strptime(database.at[1,'Timestamp'], date_format) 
-                    -datetime.strptime(database.at[0,'Timestamp'], date_format) )
+    timestep = ( datetime.strptime(database.at[1,'Timestamp'], date_format) 
+                -datetime.strptime(database.at[0,'Timestamp'], date_format) )
     
-    delta_sec = delta_tmstmp.seconds
-    num_hours = int( 24*(3600/delta_sec) )
+    timestep = timestep.seconds
+    num_hours = int( 24*(3600/timestep) )
     
     initial_hour = datetime.strptime('00:00','%H:%M')
-    hours = [initial_hour + timedelta(seconds=delta_sec*x) for x in range(num_hours)]
-    
+    hours = [initial_hour + timedelta(seconds=timestep*x) for x in range(num_hours)]
     rows = [datetime.strftime(h, '%H:%M') for h in hours]
+    
+    # obtener diferencia en segundos
+    first_hour = datetime.strptime(database.at[0,'Timestamp'], date_format)
+    first_hour = datetime.strftime(first_hour, '%H:%M')
+    first_hour = datetime.strptime(first_hour, '%H:%M')
+    
+    closest_hour = min(hours, key=lambda h: abs( first_hour - h ))
+    delta_sec = (closest_hour - first_hour).seconds
+    delta_sec = (delta_sec - 24*3600) if delta_sec > timestep else delta_sec
     
     # DataFrame
     df = pd.DataFrame(0.0, index = rows, columns= cols)
@@ -519,10 +542,13 @@ def reshape_radiation(database, colname, initial_date, final_date):
         try:
             timestamp = datetime.strptime( database.at[i, 'Timestamp'], date_format)
             
+            # aplicar corrección de desfase
+            timestamp += timedelta(seconds=delta_sec)
+            
             if (timestamp >= initial_date) and (timestamp <= final_date):
                 date = datetime.strftime(timestamp, '%d-%m-%Y')
                 hour = datetime.strftime(timestamp, '%H:%M')
-                
+
                 df.at[hour, date] = database.at[i, colname]
             
         except (ValueError, TypeError):
@@ -548,11 +574,16 @@ def compact_database(database, factor, use_average=False):
         permite decidir si sumar o ponderar los datos al comprimir el dataframe.
     """
     
+    print('\n' + '='*80)
+    print('Compacting Data Time Series')
+    print('='*80 + '\n')
+    sleep(0.25)
+    
     # -------------------------------------------------------------------------
     # obtener base de tiempo de dataset
     date_format = '%d-%m-%Y %H:%M'
     timestep = (  datetime.strptime(database.at[1, u'Timestamp'], date_format)
-                  - datetime.strptime(database.at[0, u'Timestamp'], date_format) )
+                - datetime.strptime(database.at[0, u'Timestamp'], date_format))
     timestep = timestep.seconds
     
     # -------------------------------------------------------------------------
@@ -591,7 +622,7 @@ def compact_database(database, factor, use_average=False):
     
 #------------------------------------------------------------------------------
 # alinear dataset con radiación extraterrestre
-def align_database_with_ext_rad(database, clear_sky_days, **kargs ):
+def align_radiation(database, clear_sky_days, **kargs ):
     """
     -> DataFrame
     
@@ -625,10 +656,13 @@ def align_database_with_ext_rad(database, clear_sky_days, **kargs ):
         day_times = timestamps[start_index:stop_index]
         
         # alinear máximos -----------------------------------------------------
-        ext_rad = [extraterrestrial_irrad(t, **kargs) for t in day_times]
+        ext_rad = [ext_irradiance(t, **kargs) for t in day_times]
         ext_index = ext_rad.index( max(ext_rad) )
-        
-        rad_data = list(database['Global'].values[start_index:stop_index])
+        try:
+            rad_data = list(database['Global'].values[start_index:stop_index])
+        except KeyError:
+            rad_data = list(database['Potencia'].values[start_index:stop_index])
+            
         rad_index = rad_data.index( max(rad_data) )
         
         # calcular diferencia entre máximos
@@ -638,7 +672,7 @@ def align_database_with_ext_rad(database, clear_sky_days, **kargs ):
     timestep = (datetime.strptime(timestamps[1], date_format)
                 - datetime.strptime(timestamps[0], date_format))
     delay = round(sum(diff)/len(diff))*timestep.seconds
-    
+    print(delay)
     # modificar timestamps
     new_timestamps = [datetime.strftime( datetime.strptime(t, date_format)
                      + timedelta(seconds=delay), date_format ) for t in timestamps]
@@ -646,8 +680,69 @@ def align_database_with_ext_rad(database, clear_sky_days, **kargs ):
     # retornar base de datos modificada
     db = database
     db['Timestamp'] = new_timestamps
-    return db          
+    return db
+
+#------------------------------------------------------------------------------
+# corregir daylight saving time
+def correct_daylight_saving(database, start_date, end_date):
+    """
+    -> DataFrame
+    
+    Ajusta los timestamps en la base de datos corrigiendo el periodo de cambio
+    de hora por Daylight Saving Time entre date_start y date_end.
+    
+    :param DataFrame database:
+        base de datos que contiene el registro temporal a procesar.
+    :param str date_start:
+        fecha y hora en la que comienza el DST, %d-%m-%Y %H:%M.
+    :param str date_start:
+        fecha y hora en la que termina el DST, %d-%m-%Y %H:%M. 
+    
+    :returns:
+        DataFrame con los timestamps modificados. 
+    """
+    
+    print('\n' + '='*80)
+    print('Correcting Daylight Saving Time')
+    print('='*80 + '\n')
+    sleep(0.25)
+    
+    # parsing de fechas -------------------------------------------------------
+    date_format = '%d-%m-%Y %H:%M'
+    start_date = datetime.strptime( validate_date(start_date), date_format )
+    end_date = datetime.strptime( validate_date(end_date), date_format )
+    
+    # procesamiento -----------------------------------------------------------
+    db = database.copy()
+    
+    # obtner timestep
+    timestep = (  datetime.strptime(database.at[1, u'Timestamp'], date_format)
+                - datetime.strptime(database.at[0, u'Timestamp'], date_format))
+    timestep = timestep.seconds
+    
+    delta = (3600.0/timestep)
+    
+    # procesar
+    bar = ProgressBar()
+    for i in bar( db.index ):
+        # obtener timestamp
+        timestamp = datetime.strptime(db.at[i, 'Timestamp'], date_format)
+        
+        # si está en el periodo del DST
+        if (timestamp >= start_date) and (timestamp <= end_date):
+            try:
+                db.iloc[i, 1:] = database.iloc[int(i - delta), 1:]
+            except IndexError:
+                continue
             
+            
+    # retornar base de datos
+    return db
+        
+    
+    
+    
+       
        
     
 
