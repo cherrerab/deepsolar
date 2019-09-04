@@ -8,6 +8,7 @@ v1.0 - update, Aug 01 2019
 """
 
 from solarpv.noaa._api import *
+from solarpv.noaa._tools import *
 
 __doc__ = """
 Modulo que contiene herramientas para la descarga y procesamiento de imágenes

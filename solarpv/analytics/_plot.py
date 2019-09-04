@@ -11,13 +11,10 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 
-from sklearn.cluster import KMeans
+from datetime import datetime, timedelta
 
-from math import (pi, cos, sin, tan, acos)
-from datetime import (datetime, time, timedelta)
-
-from solarpv.database import (reshape_radiation)
-from solarpv.analytics import (ext_irradiance, ext_irradiation)
+from solarpv.database import reshape_by_day
+from solarpv.analytics import ext_irradiance, ext_irradiation
 
 from solarpv import (validate_date, get_date_index)
 
@@ -76,7 +73,7 @@ def plot_2D_radiation_data(database, unit='', **kargs):
     """
     
     # transformar base de datos a formato diarioxhorario ----------------------
-    df = reshape_radiation(database, **kargs)
+    df = reshape_by_day(database, **kargs)
     
     # plotear mapa temporal de radiación --------------------------------------
     plt.figure()

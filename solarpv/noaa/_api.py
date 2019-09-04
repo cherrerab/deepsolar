@@ -22,10 +22,8 @@ from time import sleep
 
 from progressbar import ProgressBar
 
-import matplotlib.pyplot as plt
-
 # -----------------------------------------------------------------------------
-# obtener timpos de escaneo
+# obtener tiempos de escaneo
 def get_key_times(key):
     """
     -> tuple(str, str)
@@ -147,19 +145,21 @@ def download_goes16_data(timestamp, product='ABI-L1b-RadF', mode='M6',
     
     timestamp = validate_date(timestamp)
     timestamp = datetime.strptime(timestamp, date_format)
-    date_tt = timestamp.timetuple()
     
-    year = str(date_tt.tm_year)
-    yday = str(date_tt.tm_yday)
-    hour = date_tt.tm_hour
-    
+    # obtener keys en torno a la fecha especificada
     KEYS = []
     for i in range(-1,2):
-        h = str(hour+i)
+        key_time = timestamp + timedelta(hours=i)
+        date_tt = key_time.timetuple()
+        
+        year = '{0:0=4d}'.format(date_tt.tm_year)
+        yday = '{0:0=3d}'.format(date_tt.tm_yday)
+        hour = '{0:0=2d}'.format(date_tt.tm_hour)
+        
         # armar data query ----------------------------------------------------
         filename_prefix = 'OR_'+ product + '-' + mode + channel
-        data_prefix = '/'.join([product, year, yday, h, filename_prefix])
-    
+        data_prefix = '/'.join([product, year, yday, hour, filename_prefix])
+        
         # obtener keys del bucket ---------------------------------------------
         KEYS += get_keys(bucket = 'noaa-goes16', prefix = data_prefix)
         
@@ -177,8 +177,8 @@ def download_goes16_data(timestamp, product='ABI-L1b-RadF', mode='M6',
         if (timestamp > start_time) and (timestamp <= end_time):
             data_key = k
             break
-        # si timestamp no se encuentra en ningun intervalo
-        if (timestamp < end_time):
+        # si ya no es posible encontrar un intervalo que lo contenga
+        if (timestamp < start_time):
             data_key = k
             break
         
@@ -234,23 +234,30 @@ def download_goes16_data_v2(save_path, start_time, end_time,
     
     assert start_time < end_time
     
-    total_hours = (end_time - start_time).seconds
+    total_hours = (end_time - start_time).total_seconds()
     total_hours = round( total_hours/3600.0 )
     
     # verificar si la carpeta entragada existe --------------------------------
     assert os.path.isdir(save_path)
     
     # descarga ----------------------------------------------------------------
+    
+    # obtener todos los keys a descargar
+    print('collecting data keys')
+    sleep(0.25)
+    
+    DATA_KEYS = []
+    
     bar = ProgressBar()
-    for i in bar( range(total_hours) ):
+    for i in bar(range(total_hours)):
         # estructurar key_time
         key_time = start_time + timedelta(hours=i)
         
         date_tt = key_time.timetuple()
         
-        year = str(date_tt.tm_year)
-        yday = str(date_tt.tm_yday)
-        hour = str(date_tt.tm_hour)
+        year = '{0:0=4d}'.format(date_tt.tm_year)
+        yday = '{0:0=3d}'.format(date_tt.tm_yday)
+        hour = '{0:0=2d}'.format(date_tt.tm_hour)
         
         # ---------------------------------------------------------------------
         # armar data query
@@ -258,76 +265,32 @@ def download_goes16_data_v2(save_path, start_time, end_time,
         data_prefix = '/'.join([product, year, yday, hour, filename_prefix])
         
         # obtener keys del bucket
-        KEYS = get_keys(bucket = 'noaa-goes16', prefix = data_prefix)
+        keys = get_keys(bucket = 'noaa-goes16', prefix = data_prefix)
+        DATA_KEYS += keys
         
-        # descargar cada uno de los data_keys
-        for k in KEYS:
-            data_key = k
+    # descargar cada uno de los data_keys
+    print('\ndownloading netCDF4 files')
+    sleep(0.25)
+    
+    bar = ProgressBar()
+    for k in bar( DATA_KEYS ):
+        data_key = k
+        
+        # armar query de descarga
+        query = 'https://noaa-goes16.s3.amazonaws.com/' + data_key
+        response = requests.get(query)
+        
+        # procesar dataset
+        file_name = data_key.split('/')[-1].split('.')[0]
+        nc4_ds = netCDF4.Dataset(file_name, memory = response.content)
+        store = xr.backends.NetCDF4DataStore(nc4_ds)
+        
+        dataset = xr.open_dataset(store)
+        
+        # guardar
+        new_file_name = os.path.join(save_path, data_key.split('/')[-1])
+        dataset.to_netcdf(path=new_file_name, encoding = {'y':{}, 'x':{}})
             
-            # armar query de descarga
-            query = 'https://noaa-goes16.s3.amazonaws.com/' + data_key
-            response = requests.get(query)
-            
-            # procesar dataset
-            file_name = data_key.split('/')[-1].split('.')[0]
-            nc4_ds = netCDF4.Dataset(file_name, memory = response.content)
-            store = xr.backends.NetCDF4DataStore(nc4_ds)
-            
-            dataset = xr.open_dataset(store)
-            
-            # guardar
-            new_file_name = os.path.join(save_path, data_key.split('/')[-1])
-            dataset.to_netcdf(path=new_file_name, encoding = {'y':{}, 'x':{}})
-            
-    # retornanr
+    # retornar
     return None
-
-# -----------------------------------------------------------------------------
-# plotear noaa dataset - netCDF4 file
-def plot_goes16_data(nc4_dataset, **kargs):
-    """
-    -> None
-    
-    Plota los datos de radiación contenidos en el dataset entregado.
-    
-    :param str or netCDF4.Dataset nc4_dataset:
-        los strings son interpretados como la ubicación del archivo .nc.
-        los archivos netCDF4 son abiertos usando xarray.
-        
-    :returns:
-        None
-    """
-    
-    # parsing del dataset -----------------------------------------------------
-    if type(nc4_dataset) is str:
-        data = xr.open_dataset(nc4_dataset)
-        
-    elif type(nc4_dataset) is netCDF4._netCDF4.Dataset:
-        store = xr.backends.NetCDF4DataStore(nc4_dataset)
-        data = xr.open_dataset(store)
-        
-    # plotear datos -----------------------------------------------------------
-    plt.figure(figsize=(80, 80))
-    plt.imshow(data.Rad, cmap='gray')
-    plt.axis('off')
-        
-            
-            
-            
-            
-            
-            
-            
-        
-        
-        
-        
-    
-    
-    
-    
-    
-    
-
-
 

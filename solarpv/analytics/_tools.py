@@ -12,16 +12,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from sklearn.cluster import (DBSCAN, KMeans)
+from sklearn.cluster import DBSCAN
 from sklearn.manifold import TSNE
 from sklearn import preprocessing
 
-from math import (pi, cos, sin, tan, acos)
 from datetime import (datetime, timedelta)
 
-from solarpv.database import (reshape_radiation)
-from solarpv import (validate_date, get_date_index, ext_irradiance,
-                     ext_irradiation)
+from solarpv.database import reshape_by_day
+from solarpv import ext_irradiation
 
 #------------------------------------------------------------------------------
 # obtener índice de claridad diario
@@ -118,8 +116,8 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
     initial_date = datetime.strftime(initial_date, '%d-%m-%Y')
     final_date = datetime.strftime(final_date, '%d-%m-%Y')
     
-    dg = reshape_radiation(database, 'Global', initial_date, final_date)
-    dd = reshape_radiation(database, 'Diffuse', initial_date, final_date)
+    dg = reshape_by_day(database, 'Global', initial_date, final_date)
+    dd = reshape_by_day(database, 'Diffuse', initial_date, final_date)
     
     # crear dataframe de features
     df = pd.DataFrame(0.0, index = dg.columns,
@@ -197,8 +195,8 @@ def get_n_sunniest_days(database, n_days=5):
     initial_date = datetime.strftime(initial_date, '%d-%m-%Y')
     final_date = datetime.strftime(final_date, '%d-%m-%Y')
     
-    dg = reshape_radiation(database, 'Global', initial_date, final_date)
-    dd = reshape_radiation(database, 'Diffuse', initial_date, final_date)
+    dg = reshape_by_day(database, 'Global', initial_date, final_date)
+    dd = reshape_by_day(database, 'Diffuse', initial_date, final_date)
     
     # crear dataframe de features
     df = pd.DataFrame(0.0, index = dg.columns,
