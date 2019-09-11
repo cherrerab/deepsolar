@@ -19,7 +19,7 @@ from sklearn import preprocessing
 from datetime import (datetime, timedelta)
 
 from solarpv.database import reshape_by_day
-from solarpv import ext_irradiation
+from solarpv._tools import ext_irradiation
 
 #------------------------------------------------------------------------------
 # obtener índice de claridad diario

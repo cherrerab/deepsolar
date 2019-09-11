@@ -14,7 +14,7 @@ import numpy as np
 from datetime import datetime, timedelta
 
 from solarpv.database import reshape_by_day
-from solarpv.analytics import ext_irradiance, ext_irradiation
+from solarpv._tools import ext_irradiance, ext_irradiation
 
 from solarpv import (validate_date, get_date_index)
 

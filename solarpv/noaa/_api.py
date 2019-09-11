@@ -13,6 +13,8 @@ import netCDF4
 import boto3
 import matplotlib.pyplot as plt
 
+from math import floor
+
 from solarpv import validate_date
 
 from datetime import datetime, timedelta
@@ -250,23 +252,30 @@ def download_goes16_data_v2(save_path, start_time, end_time,
     
     bar = ProgressBar()
     for i in bar(range(total_hours)):
-        # estructurar key_time
-        key_time = start_time + timedelta(hours=i)
         
-        date_tt = key_time.timetuple()
-        
-        year = '{0:0=4d}'.format(date_tt.tm_year)
-        yday = '{0:0=3d}'.format(date_tt.tm_yday)
-        hour = '{0:0=2d}'.format(date_tt.tm_hour)
-        
-        # ---------------------------------------------------------------------
-        # armar data query
-        filename_prefix = 'OR_' + product + '-' + mode + channel
-        data_prefix = '/'.join([product, year, yday, hour, filename_prefix])
-        
-        # obtener keys del bucket
-        keys = get_keys(bucket = 'noaa-goes16', prefix = data_prefix)
-        DATA_KEYS += keys
+        try:
+            # estructurar key_time
+            key_time = start_time + timedelta(hours=i)
+            
+            date_tt = key_time.timetuple()
+            
+            year = '{0:0=4d}'.format(date_tt.tm_year)
+            yday = '{0:0=3d}'.format(date_tt.tm_yday)
+            hour = '{0:0=2d}'.format(date_tt.tm_hour)
+            
+            # ---------------------------------------------------------------------
+            # armar data query
+            filename_prefix = 'OR_' + product + '-' + mode + channel
+            data_prefix = '/'.join([product, year, yday, hour, filename_prefix])
+            
+            # obtener keys del bucket
+            keys = get_keys(bucket = 'noaa-goes16', prefix = data_prefix)
+            DATA_KEYS += keys
+            
+        except KeyError:
+            print('\nfallo de descarga:')
+            print(data_prefix)
+            continue
         
     # descargar cada uno de los data_keys
     print('\ndownloading netCDF4 files')
@@ -274,23 +283,32 @@ def download_goes16_data_v2(save_path, start_time, end_time,
     
     bar = ProgressBar()
     for k in bar( DATA_KEYS ):
-        data_key = k
-        
-        # armar query de descarga
-        query = 'https://noaa-goes16.s3.amazonaws.com/' + data_key
-        response = requests.get(query)
-        
-        # procesar dataset
-        file_name = data_key.split('/')[-1].split('.')[0]
-        nc4_ds = netCDF4.Dataset(file_name, memory = response.content)
-        store = xr.backends.NetCDF4DataStore(nc4_ds)
-        
-        dataset = xr.open_dataset(store)
-        
-        # guardar
-        new_file_name = os.path.join(save_path, data_key.split('/')[-1])
-        dataset.to_netcdf(path=new_file_name, encoding = {'y':{}, 'x':{}})
+        NOT_DOWNLOADED = True
+        while NOT_DOWNLOADED:
             
+            try:
+                data_key = k
+                
+                # armar query de descarga
+                query = 'https://noaa-goes16.s3.amazonaws.com/' + data_key
+                response = requests.get(query)
+                
+                # procesar dataset
+                file_name = data_key.split('/')[-1].split('.')[0]
+                nc4_ds = netCDF4.Dataset(file_name, memory = response.content)
+                store = xr.backends.NetCDF4DataStore(nc4_ds)
+                
+                dataset = xr.open_dataset(store)
+                
+                # guardar
+                new_file_name = os.path.join(save_path, data_key.split('/')[-1])
+                dataset.to_netcdf(path=new_file_name, encoding = {'y':{}, 'x':{}})
+                
+                NOT_DOWNLOADED = False
+                
+            except ConnectionError:
+                pass
+                    
     # retornar
     return None
 

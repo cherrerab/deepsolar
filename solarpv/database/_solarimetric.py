@@ -60,6 +60,7 @@ def solarimetric_dataset(path, sheet_name, header, usecols, keep_negatives=True,
     assert db is not None
     
     # filtrar y formatear -----------------------------------------------------
+    date_format = '%d-%m-%Y %H:%M'
     
     remove_index = []
     bar = ProgressBar()
@@ -68,7 +69,6 @@ def solarimetric_dataset(path, sheet_name, header, usecols, keep_negatives=True,
         try:
             # comprobar si fue emitida post iyear
             fecha = validate_date(db.at[i, u'Timestamp'])
-            date_format = '%d-%m-%Y %H:%M'
             fecha = datetime.strptime(fecha, date_format)
             
             # formatear timestamp
