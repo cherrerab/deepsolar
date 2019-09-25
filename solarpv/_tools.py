@@ -144,7 +144,7 @@ def ext_irradiance(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     E = 229.2*(0.000075 + 0.001868*cos(B) - 0.032077*sin(B) - 0.014615*cos(2*B)
         - 0.04089*sin(2*B))
     
-    solar_min = min_day + 4*(0 - lon) + E
+    solar_min = min_day + 4*(0 - lon*(180.0/pi)) + E
     solar_hour = solar_min/60.0
     
     # ángulo solar (w)
@@ -214,6 +214,7 @@ def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=
     # tiempo
     date_format = '%d-%m-%Y %H:%M'
     date = datetime.strptime(timestamp, date_format)
+    
     date_tt = date.timetuple()
     
     # dia del año
@@ -231,7 +232,7 @@ def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=
     E = 229.2*(0.000075 + 0.001868*cos(B) - 0.032077*sin(B) - 0.014615*cos(2*B)
         - 0.04089*sin(2*B))
     
-    solar_min = min_day + 4*(0 - lon) + E
+    solar_min = min_day + 4*(0 - lon*(180.0/pi)) + E
     solar_hour_1 = solar_min/60.0
     
     solar_hour_2 = (solar_min + secs/60.0)/60.0
