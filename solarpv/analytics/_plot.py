@@ -113,7 +113,8 @@ def plot_2D_radiation_data(database, unit='', **kargs):
 #------------------------------------------------------------------------------
 # obtener gráfico 1D de radiación en el tiempo
 def plot_1D_radiation_data(database, colname, start_date, stop_date, 
-                         extraRad=True, lat=-33.45775, lon=70.66466111):
+                         extraRad=True, lat=-33.45775, lon=70.66466111,
+                         multiply_factor = 1):
     """
     -> None
     Plotea el gráfico temporal 1D de la radiación en el tiempo. Donde el eje X
@@ -158,7 +159,7 @@ def plot_1D_radiation_data(database, colname, start_date, stop_date,
     X = range( len(timestamps) )
     
     plt.figure()
-    plt.plot(X, Y, c='k', ls='-', lw=0.8, label='Data')
+    plt.plot(X, Y*multiply_factor, c='k', ls='-', lw=0.8, label='Data')
     
     # añadir readiación extraterrestre ----------------------------------------
     if extraRad:

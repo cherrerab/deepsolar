@@ -174,21 +174,19 @@ def photovoltaic_dataset(dir_path, usecols, all_equipments=False,
     
     #--------------------------------------------------------------------------
     # formatear dataFrame
-    date_start, _ = os.path.splitext( csv_list[0] )
     first_hour = db.at[0, u'Timestamp'].split('/')[0]
-    
+
     # primer timestamp
     date_format = '%d-%m-%Y %H:%M'
     
-    date_start = ' '.join([date_start, first_hour])
-    date_start = datetime.strptime(date_start, '%Y-%m-%d %H:%M')
+    date_start = datetime.strptime(first_hour, '%Y-%m-%d %H:%M')
     
     # obtener base de tiempo del data frame
-    t0 = datetime.strptime( db.at[0, u'Timestamp'].split('/')[0], '%H:%M' )
-    t1 = datetime.strptime( db.at[1, u'Timestamp'].split('/')[0], '%H:%M' )
+    t0 = datetime.strptime( db.at[0, u'Timestamp'].split('/')[0], '%Y-%m-%d %H:%M')
+    t1 = datetime.strptime( db.at[1, u'Timestamp'].split('/')[0], '%Y-%m-%d %H:%M')
     
     timestep = (t1 - t0).seconds
-    
+
     # formatear columnas
     bar = ProgressBar()
     for i in bar( db.index ):
@@ -196,13 +194,17 @@ def photovoltaic_dataset(dir_path, usecols, all_equipments=False,
         # formatear timestamp
         timestamp = date_start + timedelta( seconds = i*timestep )
         new_date = datetime.strftime(timestamp,'%H:%M')
-        
+
         old_date = db.at[i, u'Timestamp'].split('/')[0]
+        old_date = datetime.strptime(old_date, '%Y-%m-%d %H:%M')
+        old_date = datetime.strftime(old_date, '%H:%M')
+        
         
         # revisar correspondencia de los datos
         if old_date != new_date:
             print('TimeError: desincronización entre timestamp y datos.')
             print(old_date)
+            print(timestamp)
             break
         
         db.at[i, u'Timestamp'] = datetime.strftime(timestamp, date_format)
@@ -210,6 +212,7 @@ def photovoltaic_dataset(dir_path, usecols, all_equipments=False,
         # formatear potencias
         for c in colnames[1:]:
             potencia = db.at[i, c]
+            potencia = potencia.replace(' ', '')
             potencia = '0,000' if potencia=='' else potencia
             potencia = float( potencia.replace(',', '.') )
             db.at[i, c] = potencia
@@ -220,8 +223,10 @@ def photovoltaic_dataset(dir_path, usecols, all_equipments=False,
     # -------------------------------------------------------------------------
     # añadir timestamps faltantes
     time_freq = str(timestep) + 'S'
-    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
-                        freq=time_freq)
+    first_date = datetime.strptime( db['Timestamp'].iloc[0], date_format)
+    last_date = datetime.strptime( db['Timestamp'].iloc[-1], date_format)
+    
+    idx = pd.date_range(first_date, last_date, freq=time_freq)
     
     db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
     db = db.reindex( idx, fill_value=0.0 )
@@ -357,9 +362,12 @@ def photovoltaic_dataset_v2(dir_path, usecols, all_equipments=False,
     
     # -------------------------------------------------------------------------
     # añadir timestamps faltantes
+    
     time_freq = str(timestep) + 'S'
-    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
-                        freq=time_freq)
+    first_date = datetime.strptime( db['Timestamp'].iloc[0], date_format)
+    last_date = datetime.strptime( db['Timestamp'].iloc[-1], date_format)
+    
+    idx = pd.date_range(first_date, last_date, freq=time_freq)
     
     db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
     db = db.reindex( idx, fill_value=0.0 )
@@ -487,8 +495,10 @@ def temperature_dataset(dir_path, usecols, keep_negatives=True, adjust_time=0,
     # -------------------------------------------------------------------------
     # añadir timestamps faltantes
     time_freq = str(timestep) + 'S'
-    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
-                        freq=time_freq)
+    first_date = datetime.strptime( db['Timestamp'].iloc[0], date_format)
+    last_date = datetime.strptime( db['Timestamp'].iloc[-1], date_format)
+    
+    idx = pd.date_range(first_date, last_date, freq=time_freq)
     
     db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
     db = db.reindex( idx, fill_value=0.0 )

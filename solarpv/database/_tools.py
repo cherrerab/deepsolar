@@ -203,6 +203,78 @@ def parse_database(path, sheet_name, header, usecols, colnames):
     return db[colnames]
 
 # -----------------------------------------------------------------------------
+# seleccionar datos contenidos en un rango temporal
+def select_date_range(database, date_start, date_end):
+    """
+    -> DataFrame
+    
+    retorna el sub-dataset contenido dentro del margen temporal especificado.
+    
+    :param DataFrame database:
+        base de datos que contiene el registro temporal a procesar.
+    :param str date_start:
+        fecha inicial del margen temporal.
+    :param str date_end:
+        fecha final del margen temporal.
+        
+    :returns:
+        DataFrame del sub-dataset
+    """
+    
+    db = database.copy()
+    db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
+    
+    # obtener rango temporal
+    date_format = '%d-%m-%Y %H:%M'
+    date_start = datetime.strptime( validate_date(date_start), date_format )
+    date_end = datetime.strptime( validate_date(date_end), date_format )
+    
+    mask = (db.index > date_start) & (db.index < date_end)
+    
+    # modificar dataset
+    db = db.loc[mask]
+    db = db.reset_index()
+    db.drop('index',axis=1, inplace=True)
+    
+    return db
+
+# -----------------------------------------------------------------------------
+# ajustar timestamps de un dataset
+def adjust_timestamps(database, delta_time):
+    """
+    -> DataFrame
+    
+    Ajusta los timestamps del dataset especificado utilizando un delta de tiempo
+    en segundos delta_time.
+    
+    :param DataFrame database:
+        base de datos que contiene el registro temporal a procesar.
+    :param int delta_time:
+        tiempo en segundos en que se desea ajustar la serie temporal.
+        
+    :returns:
+        el DataFrame con los timestamps corregidos.
+    """
+    
+    db = database.copy()
+    
+    date_format = '%d-%m-%Y %H:%M'
+    
+    # ajustar timestamps
+    for i in db.index:
+        # obtener timestamp
+        timestamp = db.at[i, u'Timestamp']
+        
+        # sumar delta_time
+        timestamp = datetime.strptime(timestamp, date_format)
+        timestamp = timestamp + timedelta(seconds=delta_time)
+        
+        # reasignar nuevo timestamp
+        db.at[i, u'Timestamp'] = datetime.strftime(timestamp, date_format)
+        
+    return db
+
+# -----------------------------------------------------------------------------
 # ordenar base de datos radiacion por día
 def reshape_by_day(database, colname, initial_date, final_date):
     """
@@ -275,7 +347,7 @@ def reshape_by_day(database, colname, initial_date, final_date):
             # aplicar corrección de desfase
             timestamp += timedelta(seconds=delta_sec)
             
-            if (timestamp >= initial_date) and (timestamp <= final_date):
+            if (timestamp >= initial_date) and (timestamp < final_date):
                 date = datetime.strftime(timestamp, '%d-%m-%Y')
                 hour = datetime.strftime(timestamp, '%H:%M')
 
@@ -414,7 +486,7 @@ def align_radiation(database, clear_sky_days, **kargs ):
 
 #------------------------------------------------------------------------------
 # corregir daylight saving time
-def correct_daylight_saving(database, start_date, end_date):
+def correct_daylight_saving(database, start_date, end_date, positive=True):
     """
     -> DataFrame
     
@@ -451,6 +523,7 @@ def correct_daylight_saving(database, start_date, end_date):
     timestep = timestep.seconds
     
     delta = (3600.0/timestep)
+    delta = delta if positive else -delta
     
     # procesar
     bar = ProgressBar()

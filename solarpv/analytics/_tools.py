@@ -45,7 +45,7 @@ def day_clear_sky_index(day_data, **kargs):
     # calcular radiación extraterrestre
     timestep = (  datetime.strptime(timestamps[1], date_format)
                 - datetime.strptime(timestamps[0], date_format)  )
-    secs = timestep.seconds/3600.0
+    secs = timestep.seconds
     
     ext_rad = [ext_irradiation(t, secs, **kargs) for t in timestamps]
     ext_sum = sum(ext_rad)

@@ -111,8 +111,10 @@ def solarimetric_dataset(path, sheet_name, header, usecols, keep_negatives=True,
     
     
     time_freq = str(timestep) + 'S'
-    idx = pd.date_range(db['Timestamp'].iloc[0], db['Timestamp'].iloc[-1],
-                        freq=time_freq)
+    first_date = datetime.strptime( db['Timestamp'].iloc[0], date_format)
+    last_date = datetime.strptime( db['Timestamp'].iloc[-1], date_format)
+    
+    idx = pd.date_range(first_date, last_date, freq=time_freq)
     
     db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
     db = db.reindex( idx, fill_value=0.0 )
