@@ -14,7 +14,9 @@ from datetime import datetime, timedelta
 
 from solarpv import (validate_date, get_date_index, ext_irradiance)
 
-from math import ceil
+import numpy as np
+
+from math import ceil, floor
 from progressbar import ProgressBar
 import os
 
@@ -229,7 +231,7 @@ def select_date_range(database, date_start, date_end):
     date_start = datetime.strptime( validate_date(date_start), date_format )
     date_end = datetime.strptime( validate_date(date_end), date_format )
     
-    mask = (db.index > date_start) & (db.index < date_end)
+    mask = (db.index >= date_start) & (db.index < date_end)
     
     # modificar dataset
     db = db.loc[mask]
@@ -420,8 +422,97 @@ def compact_database(database, factor, use_average=False):
                 df.at[i//factor, c] += database.at[i, c]*weight
     
     return df
-        
+
+#------------------------------------------------------------------------------
+# generar database de ventanas temporales
+def time_window_dataset(database, n_input, n_output, overlap):
+    """
+    -> (DataFrame, DataFrame)
     
+    Crea dos datasets (X,Y) a partir del database, tomando ventanas de tiempo
+    adyacentes, el desfase entre estas ventanas puede ser definido mediante el
+    parámetro overlap.
+    
+    :param DataFrame database:
+        base de datos que contiene el registro temporal a procesar.
+    :param int n_input:
+        largo de la ventana temporal de X.
+    :param int n_output:
+        largo de la ventana temporal de Y.
+    :param int overlap:
+        desfase entre las ventanas temporales.
+    
+    :returns:
+        tupla de DataFrames (X, Y). 
+    """
+    # obtener cantidad de datos en database
+    n_data = database.shape[0]
+    
+    # obtener cantidad de ventanas temporales que se construiran
+    k = overlap
+    n_windows = floor( (n_data-n_input-n_output)/k )
+    
+    # inicializar datasets
+    colnames_x = ['t' + str(i) for i in np.arange(n_input)]
+    colnames_y = ['t' + str(i) for i in np.arange(n_output)]
+    
+    X = pd.DataFrame(0.0, index=np.arange(n_windows), columns=colnames_x)
+    Y = pd.DataFrame(0.0, index=np.arange(n_windows), columns=colnames_y)
+
+    for i in np.arange( n_windows ):
+        X.at[i, :] = database[k*i:k*i+n_input].values
+        Y.at[i, :] = database[k*i+n_input:k*i+n_input+n_output].values
+        
+    return (X, Y)
+
+# -----------------------------------------------------------------------------
+# contruir set de input y output para entrenamiento, (X, Y)
+def setup_lstm_dataset(dataset, output_name, n_input, n_output, overlap,
+                       avoid_cols=[]):
+    """
+    -> numpy.array, numpy.array
+    
+    construye el par de datasets X, Y necesarios para el entrenamiento de
+    un modelo LSTM, asociando a cada 3-dimension una columna del dataset
+    entregado. el dataset Y se contruye a partir de la columna output_name.
+    
+    :param pd.DataFrame dataset:
+        set de datos a partir del cual se obtienen los sets X e Y.
+    :param str output_name:
+        nombre de la columna que contiene los datos de Y.
+    :param int n_input:
+        largo de la ventana temporal de X.
+    :param int n_output:
+        largo de la ventana temporal de Y.
+    :param int overlap:
+        desfase entre las ventanas temporales.
+        
+    :returns:
+        tupla de datasets (X, Y)
+    """
+    
+    # obtener ventana de tiempo de la columna output
+    X_output, Y = time_window_dataset(dataset[output_name], n_input, n_output, overlap)
+    
+    # inicializar set X
+    colnames = list(dataset.columns.values)
+    for c in avoid_cols:
+        colnames.remove(c)
+    
+    X = np.zeros( (X_output.shape[0], X_output.shape[1], len(colnames)) )
+    
+    # rellenar set
+    for i in np.arange( len(colnames) ):
+        # transformar datos de la columna i en ventanas temporales
+        col_i = colnames[i]
+        xi, _ = time_window_dataset(dataset[col_i], n_input, n_output, overlap)
+        
+        # agregar ventanas de tiempo al set
+        X[:, :, i] = xi
+    
+    # retornar sets
+    return (X, Y)
+        
 #------------------------------------------------------------------------------
 # alinear dataset con radiación extraterrestre
 def align_radiation(database, clear_sky_days, **kargs ):

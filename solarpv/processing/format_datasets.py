@@ -13,7 +13,7 @@ from solarpv.analytics import plot_1D_radiation_data
 from solarpv.analytics import plot_2D_radiation_data
 
 # directorio donde se encuentran los archivos
-dir_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\001. DATASETS\\001. SOLARIMETRIC DATA'
+dir_path = 'C:\\Cristian\\001. SOLARIMETRIC DATA'
 data_file = 'CR1000_Beauchef_min_Corregido.csv'
 
 data_path = os.path.join(dir_path, data_file)
@@ -32,6 +32,26 @@ plot_2D_radiation_data(solar_rad_1min, unit='Wh/m2', colname='Global', initial_d
 # guardar dataset
 save_path = os.path.join(dir_path, 'solarimetric-1min-dataset.pkl')
 solar_1min.to_pickle(save_path)
+
+
+#%%
+###############################################################################
+########################## SOLARIMETRIC 30 MIN DATA ###########################
+########################## 27-08-2018   25-09-2019 ############################
+###############################################################################
+import pandas as pd
+
+from solarpv.database import compact_database
+from solarpv.database import select_date_range
+from solarpv.database import adjust_timestamps
+from solarpv.database import radiance_to_radiation
+
+# cargar datos solarimétricos
+solar_1min_path = 'C:\\Cristian\\001. SOLARIMETRIC DATA\\solarimetric-1min-dataset.pkl'
+solar_1min_dataset = pd.read_pickle(solar_1min_path)
+solar_1min_dataset = select_date_range(solar_1min_dataset, '27-08-2018 00:00', '25-09-2019 00:00')
+solar_1min_dataset = compact_database(solar_1min_dataset, 30, use_average=True)
+solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)
 
 #%%
 ###############################################################################

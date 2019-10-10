@@ -14,6 +14,7 @@ import pandas as pd
 
 from sklearn.cluster import DBSCAN
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 from sklearn import preprocessing
 
 from datetime import (datetime, timedelta)
@@ -158,12 +159,30 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
     min_max_scaler = preprocessing.MinMaxScaler()
     df_minmax = min_max_scaler.fit_transform(features)
 
+    # realizar clustering
     clusterer = DBSCAN(eps=eps, min_samples=min_samples).fit(df_minmax)
     
-    data_embedded = TSNE(n_components=2).fit_transform(df_minmax)
-    plt.figure()
-    plt.scatter(data_embedded[:,0], data_embedded[:,1], cmap='plasma',
-                c=clusterer.labels_, s=10.0)
+    # plotear resultado
+    data_embedded = PCA(n_components = 2).fit_transform(df_minmax)
+    
+    fig, axs = plt.subplots(2, 2)
+    # plotear TSNE
+    axs[0, 0].scatter(data_embedded[:,0], data_embedded[:,1], cmap='plasma',
+                      c=clusterer.labels_, s=10.0)
+    axs[0, 0].set_title('TSNE embedding')
+    
+    # plotear clustering
+    axs[0, 1].scatter(df_minmax[:,0], df_minmax[:,1], cmap='plasma',
+                      c=clusterer.labels_, s=10.0)
+    axs[0, 1].set_title('cloudless vs clear_sky')
+    
+    axs[1, 0].scatter(df_minmax[:,0], df_minmax[:,2], cmap='plasma',
+                     c=clusterer.labels_, s=10.0)
+    axs[1, 0].set_title('smoothness vs clear_sky')
+    
+    axs[1, 1].scatter(df_minmax[:,1], df_minmax[:,2], cmap='plasma',
+                     c=clusterer.labels_, s=10.0)
+    axs[1, 1].set_title('smoothness vs cloudless')
     
     return clusterer.labels_
     
