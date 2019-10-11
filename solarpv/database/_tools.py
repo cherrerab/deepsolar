@@ -425,52 +425,78 @@ def compact_database(database, factor, use_average=False):
 
 #------------------------------------------------------------------------------
 # generar database de ventanas temporales
-def time_window_dataset(database, n_input, n_output, overlap):
+def time_window_dataset(dataset, output_name, n_input, n_output, overlap,
+                        avoid_columns=[]):
     """
-    -> (DataFrame, DataFrame)
+    -> (np.array, np.array)
     
     Crea dos datasets (X,Y) a partir del database, tomando ventanas de tiempo
     adyacentes, el desfase entre estas ventanas puede ser definido mediante el
     parámetro overlap.
     
-    :param DataFrame database:
+    :param DataFrame dataset:
         base de datos que contiene el registro temporal a procesar.
+    :param str output_name:
+        nombre de la columna que contiene los datos del set Y
     :param int n_input:
         largo de la ventana temporal de X.
     :param int n_output:
         largo de la ventana temporal de Y.
     :param int overlap:
         desfase entre las ventanas temporales.
+    :param list(str) avoid_columns:
+        lista con el nombre de las columnas que no se desean procesar.
     
     :returns:
-        tupla de DataFrames (X, Y). 
+        tupla de np.arrays (X, Y). 
     """
     # obtener cantidad de datos en database
-    n_data = database.shape[0]
+    n_data = dataset.shape[0]
     
+    # remover columnas especificadas en avoid_columns
+    colnames = list(dataset.columns.values)
+    for c in avoid_columns:
+        colnames.remove(c)
+        
+    # obtener cantidad de atributos en database
+    n_features = len(colnames)
+    
+    # -------------------------------------------------------------------------
     # obtener cantidad de ventanas temporales que se construiran
     k = overlap
     n_windows = floor( (n_data-n_input-n_output)/k )
     
     # inicializar datasets
-    colnames_x = ['t' + str(i) for i in np.arange(n_input)]
-    colnames_y = ['t' + str(i) for i in np.arange(n_output)]
+    X = np.zeros((n_windows, n_input, n_features))
+    Y = np.zeros((n_windows, n_output))
     
-    X = pd.DataFrame(0.0, index=np.arange(n_windows), columns=colnames_x)
-    Y = pd.DataFrame(0.0, index=np.arange(n_windows), columns=colnames_y)
-
-    for i in np.arange( n_windows ):
-        X.at[i, :] = database[k*i:k*i+n_input].values
-        Y.at[i, :] = database[k*i+n_input:k*i+n_input+n_output].values
+    # -------------------------------------------------------------------------
+    # procesar datasets
+    
+    # por cada atributo
+    for i in range(n_features):
         
+        # obtener serie de datos de la columna
+        column_i = colnames[i]
+        feature_data = dataset[column_i]
+        
+        # obtener ventanas temporales
+        for j in np.arange( n_windows ):
+            X[j, :, i] = feature_data[k*j:k*j+n_input].values
+            
+            # si el atributo corresponde al output
+            if column_i == output_name:
+                Y[j, :] = feature_data[k*j+n_input:k*j+n_input+n_output].values
+    
+    # retornar sets    
     return (X, Y)
 
 # -----------------------------------------------------------------------------
 # contruir set de input y output para entrenamiento, (X, Y)
-def setup_lstm_dataset(dataset, output_name, n_input, n_output, overlap,
-                       avoid_cols=[]):
+def setup_lstm_dataset(dataset, output_name, days_train, days_test,
+                       n_input, n_output, overlap, avoid_columns=[]):
     """
-    -> numpy.array, numpy.array
+    -> numpy.array, numpy.array, numpy.array, numpy.array
     
     construye el par de datasets X, Y necesarios para el entrenamiento de
     un modelo LSTM, asociando a cada 3-dimension una columna del dataset
@@ -480,38 +506,105 @@ def setup_lstm_dataset(dataset, output_name, n_input, n_output, overlap,
         set de datos a partir del cual se obtienen los sets X e Y.
     :param str output_name:
         nombre de la columna que contiene los datos de Y.
+    :param int days_train:
+        periodo de días a agregar al set X_train en cada iteración.
+    :param int days_test:
+        periodo de días a agregar al set X_test en cada iteración.
     :param int n_input:
         largo de la ventana temporal de X.
     :param int n_output:
         largo de la ventana temporal de Y.
     :param int overlap:
         desfase entre las ventanas temporales.
+    :param list(str) avoid_columns:
+        lista con el nombre de las columnas que no se desean procesar.
         
     :returns:
-        tupla de datasets (X, Y)
+        tupla de datasets (X_train, X_test, Y_train, Y_test)
     """
     
-    # obtener ventana de tiempo de la columna output
-    X_output, Y = time_window_dataset(dataset[output_name], n_input, n_output, overlap)
+    print('\n' + '='*80)
+    print('Spliting Training Data')
+    print('='*80 + '\n')
+    sleep(0.25)
+    # -------------------------------------------------------------------------
+    # inicialización
     
-    # inicializar set X
-    colnames = list(dataset.columns.values)
-    for c in avoid_cols:
-        colnames.remove(c)
+    # obtener fecha inicial del dataset e inicializar current_date
+    date_format = '%d-%m-%Y %H:%M'
+    current_date = datetime.strptime(dataset.at[0, 'Timestamp'], date_format)
     
-    X = np.zeros( (X_output.shape[0], X_output.shape[1], len(colnames)) )
+    # inicializar sets de datos
+    train_dataset = []
     
-    # rellenar set
-    for i in np.arange( len(colnames) ):
-        # transformar datos de la columna i en ventanas temporales
-        col_i = colnames[i]
-        xi, _ = time_window_dataset(dataset[col_i], n_input, n_output, overlap)
+    # datos de entrenamiento
+    X_train_wd = []; Y_train_wd = []
+    
+    # datos de validación
+    X_test_wd = []; Y_test_wd = []
+    
+    # -------------------------------------------------------------------------
+    # procesamiento
+    train_date = current_date + timedelta(days=days_train)
+    test_date = current_date + timedelta(days=days_train+days_test)
+    
+    # inicializar sub-sets
+    train_i = []; test_i = []
+    
+    bar = ProgressBar()
+    for i in bar( dataset.index ):
+        # obtener timestamp
+        timestamp = datetime.strptime(dataset.at[i, 'Timestamp'], date_format)
+        #print(timestamp)
         
-        # agregar ventanas de tiempo al set
-        X[:, :, i] = xi
+        # si debe ser agregado al X_train
+        if (timestamp < train_date):
+            train_i.append( dataset.iloc[[i]] )
+          
+        # si debe ser agregado al X_test
+        elif (train_date <= timestamp) and (timestamp < test_date):
+            test_i.append( dataset.iloc[[i]] )
+            
+        # si se entra en un nuevo periodo de split
+        elif (test_date <= timestamp):
+            # concatenar datos
+            train_data = pd.concat(train_i, axis=0)
+            test_data = pd.concat(test_i, axis=0)
+            
+            # agregar train_data a list
+            train_dataset.append(train_data)
+            
+            # obtener ventanas temporales
+            X_train_wd_i, Y_train_wd_i = time_window_dataset(train_data, output_name, n_input, n_output, overlap, avoid_columns)
+            X_test_wd_i, Y_test_wd_i = time_window_dataset(test_data, output_name, n_input, n_output, overlap, avoid_columns)
+        
+            # agregar ventanas a listas
+            X_train_wd.append(X_train_wd_i)
+            Y_train_wd.append(Y_train_wd_i)
+            
+            X_test_wd.append(X_test_wd_i)
+            Y_test_wd.append(Y_test_wd_i)
+            
+            # reinicializar sub-sets
+            train_i = []; test_i = []
+            
+            # re-establecer fechas
+            current_date = timestamp
+            train_date = current_date + timedelta(days=days_train)
+            test_date = current_date + timedelta(days=days_train+days_test)
+            
+    # -------------------------------------------------------------------------
+    # finalizacion
     
-    # retornar sets
-    return (X, Y)
+    # concatenar ventanas temporales
+    X_train = np.concatenate(X_train_wd, axis=0)
+    Y_train = np.concatenate(Y_train_wd, axis=0)
+    
+    X_test = np.concatenate(X_test_wd, axis=0)
+    Y_test = np.concatenate(Y_test_wd, axis=0)
+    
+    # retornar
+    return X_train, X_test, Y_train, Y_test
         
 #------------------------------------------------------------------------------
 # alinear dataset con radiación extraterrestre

@@ -63,36 +63,49 @@ plot_2D_radiation_data(db, unit='kW', colname='Sistema', initial_date=date_first
 #%%############################################################################
 ############################# SETUP DATASET ###################################
 ###############################################################################
-from sklearn.model_selection import train_test_split
 import numpy as np
-from math import floor
-
-from datetime import datetime
-
-from solarpv import ext_irradiation
-from solarpv.database import reshape_by_day
-from solarpv.database import time_window_dataset
-
 from sklearn.preprocessing import MinMaxScaler
+from solarpv.database import setup_lstm_dataset
 
-system_data = db.copy()
+system_data = db[['Timestamp','Sistema']]
 
-# obtenemos la cantidad de datos
-n_data = system_data.shape[0]
-
-# obtenemos el máximo valor de potencia registrado para normalizar
-max_pot = np.max(system_data['Sistema'].values, axis=None)
-system_data['Sistema'] = system_data['Sistema']/max_pot
-
-# previews point
+# time window size
 n_input = 12
 n_output = 6
 overlap = 18
 
-X, Y = time_window_dataset(system_data['Sistema'], n_input, n_output, overlap)
+# realizar dataset split
+X_train, X_test, Y_train, Y_test = setup_lstm_dataset(system_data, 'Sistema', 8, 2, 12, 6, 18, ['Timestamp'])
 
-X = np.expand_dims(X,-1)
-X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size = 0.2, random_state = 217)
+# -----------------------------------------------------------------------------
+# normalización
+std_scaler = np.zeros((X_train.shape[2], 2))
+
+# por cada feature del dataset de training
+for i in range(X_train.shape[2]):
+    # obtener el mínimo
+    feature_min = np.min(X_train[:,:,i], axis=None)
+    # obtener el máximo
+    feature_max = np.max(X_train[:,:,i], axis=None)
+    
+    # normalizar
+    X_train[:,:,i] = (X_train[:,:,i] - feature_min)/(feature_max - feature_min)
+    
+    # agregar al scaler
+    std_scaler[i, 0] = feature_min
+    std_scaler[i, 1] = feature_max
+
+# por cada feature del dataset de testing
+for i in range(X_train.shape[2]):
+    # obtener parámetros del scaler
+    feature_min = std_scaler[i, 0]
+    feature_max = std_scaler[i, 1]
+    
+    # normalizar
+    X_test[:,:,i] = (X_test[:,:,i] - feature_min)/(feature_max - feature_min)
+    
+    Y_train[:,:] = (Y_train[:,:] - feature_min)/(feature_max - feature_min)
+    Y_test[:,:] = (Y_test[:,:] - feature_min)/(feature_max - feature_min)
 
 #%%############################################################################
 ############################### ANN MODEL #####################################
@@ -174,6 +187,10 @@ from solarpv.database import radiance_to_radiation
 
 from solarpv.analytics import cluster_evaluation
 
+eval_data = system_data.copy()
+eval_data['Sistema'] = (eval_data['Sistema'] - feature_min)/(feature_max-feature_min)
+
+
 # evaluar modelo de forecasting
-cluster_metrics = cluster_evaluation(solar_1min_dataset, system_data, model)
+cluster_metrics = cluster_evaluation(solar_1min_dataset, eval_data, model)
 
