@@ -13,10 +13,55 @@ from solarpv.database import radiance_to_radiation
 # cargar datos de potencia-SMA
 sma_15min_path = 'C:\\Cristian\\003. SMA DATASET\\005. 15 MINUTES SYSTEM DATA2\\sma-15min-dataset.pkl'
 power_dataset = pd.read_pickle(sma_15min_path)
+power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
 # compactar a base de 30min
 power_dataset = compact_database(power_dataset, 2, use_average=True)
-power_dataset = adjust_timestamps(power_dataset, -15*60)
+#power_dataset = adjust_timestamps(power_dataset, -15*60)
+
+# -----------------------------------------------------------------------------
+# cargar datos de temperatura-SMA
+temp_15min_path = 'C:\\Cristian\\003. SMA DATASET\\004. TEMPERATURE DATA\\temperature-15min-dataset.pkl'
+temperature_dataset = pd.read_pickle(temp_15min_path)
+temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
+
+# compactar a base de 30min
+temperature_dataset = compact_database(temperature_dataset, 2, use_average=True)
+#temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
+
+# -----------------------------------------------------------------------------
+# cargar datos solarimétricos
+solar_1min_path = 'C:\\Cristian\\001. SOLARIMETRIC DATA\\solarimetric-1min-dataset.pkl'
+solarimetric_dataset = pd.read_pickle(solar_1min_path)
+solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
+
+# compactar a base de 30min
+solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
+#solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
+
+
+#%%############################################################################
+################################ ANALYSIS #####################################
+###############################################################################
+from datetime import datetime, timedelta
+from solarpv.analytics import plot_2D_radiation_data
+from solarpv.analytics import plot_1D_radiation_data
+
+# plotear dataset potencia
+plot_2D_radiation_data(power_dataset, unit='kW', colname='Sistema', initial_date='27-08-2018',final_date='07-09-2019')
+
+# checkear resultado con día soleado
+plot_1D_radiation_data(power_dataset, 'Sistema', '04-11-2018', '05-11-2018', multiply_factor=80)
+
+# plotear dataset temperatura
+plot_2D_radiation_data(temperature_dataset, unit='°C', colname='Module', initial_date='27-08-2018',final_date='07-09-2019')
+
+# plotear dataset solarimetrico
+plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Diffuse', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Direct', initial_date='27-08-2018',final_date='07-09-2019')
+
+plot_2D_radiation_data(solarimetric_dataset, unit='°C', colname='Temperature', initial_date='27-08-2018',final_date='07-09-2019')
 
 #%%############################################################################
 ############################# SETUP DATASET ###################################
@@ -26,15 +71,21 @@ from solarpv.database import lstm_standard_scaling
 
 
 import pandas as pd
-from datetime import datetime, timedelta
 
 # inicilizar dataset
-colnames = ['Timestamp', 'Power', 'n_day', 'min_day']
+colnames = ['Timestamp', 'Power', 'Module Temperature', 'External Temperature', 'Global', 'Diffuse', 'Direct', 'n_day', 'min_day']
 dataset = pd.DataFrame(0.0, index=power_dataset.index, columns=colnames)
 
 # asignar columna de timestamp y potencia
 dataset['Timestamp'] = power_dataset['Timestamp']
 dataset['Power'] = power_dataset['Sistema']
+
+dataset['Module Temperature'] = temperature_dataset['Module']
+dataset['External Temperature'] = solarimetric_dataset['Temperature']
+
+dataset['Global'] = solarimetric_dataset['Global']
+dataset['Diffuse'] = solarimetric_dataset['Diffuse']
+dataset['Direct'] = solarimetric_dataset['Direct']
 
 # -----------------------------------------------------------------------------
 # rellenar resto columnas
@@ -58,7 +109,7 @@ for i in dataset.index:
 # setup time windows
 n_input = 12
 n_output = 6
-overlap = 18
+overlap = 3
 
 # realizar dataset split
 X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset, 'Power', 8, 2, n_input, n_output, overlap, ['Timestamp'])
@@ -67,7 +118,7 @@ X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset, 'Power', 8, 2, n_
 # normalización
 X_train, X_test, std_scaler = lstm_standard_scaling(X_train, X_test, Y_train, Y_test)
 
-# obtener cantidad de features
+# reshape dataset
 n_feature = X_train.shape[2]
 
 feature_min = std_scaler[0, 0]
@@ -94,25 +145,18 @@ import matplotlib.pyplot as plt
 model = Sequential()
 
 # creamos la primera capa de input
-model.add(LSTM(units = 256, return_sequences = True, input_shape = (n_input,n_feature)))
-keras.layers.Dropout(rate = 0.2)
+model.add(LSTM(units = 128, return_sequences = True, input_shape = (n_input,8)))
+keras.layers.Dropout(rate = 0.1)
 
 # creamos la segunda capa LSTM (con DropOut)
-model.add(LSTM(units = 256, return_sequences = True))
-keras.layers.Dropout(rate = 0.2)
+model.add(LSTM(units = 64, return_sequences = True))
+keras.layers.Dropout(rate = 0.1)
 
 # creamos la tercera y cuarta capa (con DropOut)
-model.add(Dense(units = 128, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-
-model.add(Dense(units = 128, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-
-model.add(Dense(units = 64, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-
-model.add(Dense(units = 64, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
+model.add(Dense(units = 64, activation = 'tanh'))
+keras.layers.Dropout(rate = 0.1)
+model.add(Dense(units = 64, activation = 'tanh'))
+keras.layers.Dropout(rate = 0.1)
 
 # creamos la capa de salida
 model.add(Flatten())
@@ -148,7 +192,7 @@ from solarpv.database import compact_database
 # cargar datos solarimetricos
 solar_1min_path = 'C:\\Cristian\\001. SOLARIMETRIC DATA\\solarimetric-1min-dataset.pkl'
 solar_1min_dataset = pd.read_pickle(solar_1min_path)
-solar_1min_dataset = select_date_range(solar_1min_dataset, '27-08-2018 00:00', '25-09-2019 00:00')
+solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:00', '07-09-2019 00:00')
 solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)
 
 #%%############################################################################

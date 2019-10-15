@@ -156,3 +156,34 @@ plot_2D_radiation_data(sma_hour, unit='kW', colname='Sistema', initial_date='201
 save_path = os.path.join(dir_path, 'sma-hourly-dataset.pkl')
 sma_hour.to_pickle(save_path)
 
+#%%############################################################################
+####################### SMA TEMPERATURE 15 MIN DATA ###########################
+###############################################################################
+import os
+
+from solarpv.database import temperature_dataset
+from solarpv.database import correct_daylight_saving
+from solarpv.database import adjust_timestamps
+
+from solarpv.analytics import plot_1D_radiation_data
+from solarpv.analytics import plot_2D_radiation_data
+
+# directorio donde se encuentran los archivos
+dir_path = 'C:\\Cristian\\003. SMA DATASET\\004. TEMPERATURE DATA'
+
+# generar dataset
+sma_temp = temperature_dataset(dir_path, ['A','B','C'])
+
+# corregir daylight saving time
+sma_temp = correct_daylight_saving(sma_temp, '14-10-2018', '10-03-2019', positive=False)
+
+# ajustar timezone del dataset (GMT -3)
+sma_temp = adjust_timestamps(sma_temp, 4*3600)
+
+# plotear dataset
+plot_2D_radiation_data(sma_temp, unit='°C', colname='Module', initial_date='27-08-2018',final_date='23-09-2019')
+
+# guardar dataset
+save_path = os.path.join(dir_path, 'temperature-15min-dataset.pkl')
+sma_temp.to_pickle(save_path)
+

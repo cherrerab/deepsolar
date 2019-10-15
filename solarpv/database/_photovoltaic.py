@@ -414,14 +414,12 @@ def temperature_dataset(dir_path, usecols, keep_negatives=True, adjust_time=0,
     # ordenar los archivos csv
     csv_list = []
     for f in files_list:
-        file_name, _ = os.path.splitext(f)
+        file_name, file_ext = os.path.splitext(f)
         
-        # obtener número
-        _, file_num = file_name.split( '(' )
-        file_num, _ = file_num.split( ')' )
-        file_num = int(file_num)
+        if file_ext != '.csv':
+            continue
         
-        csv_list.append( (file_num, f) )
+        csv_list.append( f )
     
     # ordenar
     csv_list.sort()
@@ -430,15 +428,19 @@ def temperature_dataset(dir_path, usecols, keep_negatives=True, adjust_time=0,
     # crear dataframe
  
     # columnas a usar
-    colnames = [u'Exterior', u'Module']
+    colnames = [u'Timestamp', u'Exterior', u'Module']
     
     # leer datos
     files_data = []
-    for _, f in csv_list:
+    for f in csv_list:
+        file_name, _ = os.path.splitext(f)
         
         # leer csv
         file_path = os.path.join(dir_path, f)
         db = parse_database(file_path, 'Hoja1', 1, usecols, colnames)
+        
+        # añadir fecha al timestamp de los datos
+        db['Timestamp'] = file_name + ' ' + db['Timestamp'].astype(str)
         
         # añadir a la lista de datos
         files_data.append(db)
@@ -447,21 +449,18 @@ def temperature_dataset(dir_path, usecols, keep_negatives=True, adjust_time=0,
     
     #--------------------------------------------------------------------------
     # formatear dataFrame
-    date_start = os.path.basename(dir_path)
-    first_hour, first_day = db.at[0, u'Timestamp'].split('/')
+    first_hour = db.at[0, u'Timestamp'].split('/')[0]
 
-    assert int(first_day) == datetime.strptime(date_start, '%d-%m-%Y').day
-    
     # primer timestamp
     date_format = '%d-%m-%Y %H:%M'
     
-    date_start = ' '.join([date_start, first_hour])
-    date_start = datetime.strptime(date_start, date_format)
+    date_start = datetime.strptime(first_hour, '%Y-%m-%d %H:%M')
     
     # obtener base de tiempo del data frame
-    timestep = (  datetime.strptime(db.at[1,u'Timestamp'], '%H:%M/ %d')
-                  - datetime.strptime(db.at[0,u'Timestamp'], '%H:%M/ %d') )
-    timestep = timestep.seconds
+    t0 = datetime.strptime( db.at[0, u'Timestamp'].split('/')[0], '%Y-%m-%d %H:%M')
+    t1 = datetime.strptime( db.at[1, u'Timestamp'].split('/')[0], '%Y-%m-%d %H:%M')
+    
+    timestep = (t1 - t0).seconds
     
     # formatear columnas
     bar = ProgressBar()
@@ -469,10 +468,21 @@ def temperature_dataset(dir_path, usecols, keep_negatives=True, adjust_time=0,
         
         # formatear timestamp
         timestamp = date_start + timedelta( seconds = i*timestep )
-        new_date = datetime.strftime(timestamp,'%H:%M/ %d')
+        new_date = datetime.strftime(timestamp,'%H:%M')
+
+        old_date = db.at[i, u'Timestamp'].split('/')[0]
+        old_date = datetime.strptime(old_date, '%Y-%m-%d %H:%M')
+        old_date = datetime.strftime(old_date, '%H:%M')
         
-        old_date = datetime.strptime(db.at[i, u'Timestamp'],'%H:%M/ %d')
-        old_date = datetime.strftime(old_date,'%H:%M/ %d')
+        
+        # revisar correspondencia de los datos
+        if old_date != new_date:
+            print('TimeError: desincronización entre timestamp y datos.')
+            print(old_date)
+            print(timestamp)
+            break
+        
+        db.at[i, u'Timestamp'] = datetime.strftime(timestamp, date_format)
         
         # revisar correspondencia de los datos
         if old_date != new_date:

@@ -17,13 +17,13 @@ import pandas as pd
 
 from solarpv import validate_date
 from solarpv.analytics import cluster_daily_radiation
-from solarpv.database import reshape_by_day
+from solarpv.database import time_window_dataset
 
 import numpy as np
 
 #------------------------------------------------------------------------------
 # evaluar modelo en cierto periodo de tiempo
-def forecasting_test(database, model, forecasting_date):
+def forecasting_test(database, output_name, model, forecasting_date):
     """
     -> (np.array, np.array)
     
@@ -33,6 +33,8 @@ def forecasting_test(database, model, forecasting_date):
     :param DataFrame database:
         base de datos que contiene el registro de generación fotovoltaica en
         el tiempo.
+    :param str output_name:
+        nombre de la columna que contiene los datos del set Y
     :param keras.model model:
         modelo de forecasting a evaluar.
     :param str forecasting_date:
@@ -63,14 +65,14 @@ def forecasting_test(database, model, forecasting_date):
         return None
     
     # definir datos
-    Y_data = database['Sistema'].iloc[date_index:end_index].values
+    Y_data = database[output_name].iloc[date_index:end_index].values
     Y_data = np.reshape(Y_data, (n_output,-1))
     
-    X = database['Sistema'].iloc[start_index:date_index]
-    X_pred = np.reshape(X.values, (1,n_input,1))
+    X_data = database.iloc[start_index:end_index]
+    X, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
     
     # aplicar modelo
-    Y_pred = model.predict(X_pred)
+    Y_pred = model.predict(X)
     Y_pred = np.reshape(Y_pred, (n_output,-1))
     
     # retornar
@@ -79,7 +81,7 @@ def forecasting_test(database, model, forecasting_date):
 
 #------------------------------------------------------------------------------
 # obtener gráficos de predicción en cuatro días distintos al azar
-def plot_forecasting_model(database, model, forecasting_date, 
+def plot_forecasting_model(database, output_name, model, forecasting_date, 
                            hours=['10:00','13:00','16:00','19:00'],
                            time_margin=12, title=''):
     """
@@ -91,6 +93,8 @@ def plot_forecasting_model(database, model, forecasting_date,
     :param DataFrame database:
         base de datos que contiene el registro de generación fotovoltaica en
         el tiempo.
+    :param str output_name:
+        nombre de la columna que contiene los datos del set Y.
     :param keras.model model:
         modelo de forecasting a evaluar.
     :param str forecasting_date:
@@ -137,23 +141,23 @@ def plot_forecasting_model(database, model, forecasting_date,
         T_X = database.index[start_index:date_index]
         T_Y = database.index[date_index:end_index]
         
-        X = database['Sistema'].iloc[start_index:date_index]
-        X_pred = np.reshape(X.values, (1,n_input,1))
+        X_data = database.iloc[start_index:end_index]
+        X, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
         
         # aplicar modelo
-        Y_pred = model.predict(X_pred)
+        Y_pred = model.predict(X)
         Y_pred = np.reshape(Y_pred, (n_output,-1))
         
         # datos base
         start_index = max([0, start_index - time_margin])
         end_index = min([database.shape[0], end_index + time_margin])
         T_data = database.index[start_index:end_index]
-        Y_data = database['Sistema'].iloc[start_index:end_index]
+        Y_data = database[output_name].iloc[start_index:end_index]
     
         # plotear
         axs[ix[0], ix[1]].plot(T_data, Y_data, ls='--', c='k')
         
-        axs[ix[0], ix[1]].plot(T_X, X, 'bo-')
+        axs[ix[0], ix[1]].plot(T_X, X[0,:,0], 'bo-')
         axs[ix[0], ix[1]].plot(T_Y, Y_pred,'ro-')
         
         axs[ix[0], ix[1]].set_ylabel('PV Yield kW_avg')
@@ -208,7 +212,7 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
 
 #------------------------------------------------------------------------------
 # realizar evaluación respecto a clusters de días
-def cluster_evaluation(solar_database, pv_database, model, random_state=0):
+def cluster_evaluation(solar_database, pv_database, output_name, model, random_state=0):
     """
     -> None
     
@@ -220,6 +224,8 @@ def cluster_evaluation(solar_database, pv_database, model, random_state=0):
         resgistro temporal de la radiación global en el día.
     :param DataFrame pv_database:
         registro temporal de generación en el día.
+    :param str output_name:
+        nombre de la columna que contiene los datos del set Y.
     :param keras.model model:
         modelo de forecasting a evaluar.
         
@@ -276,7 +282,7 @@ def cluster_evaluation(solar_database, pv_database, model, random_state=0):
             
             # calcular mse de predicción en cada una de las horas
             for test_time in test_times:
-                Y_data, Y_pred = forecasting_test(pv_database, model, test_time)
+                Y_data, Y_pred = forecasting_test(pv_database, output_name, model, test_time)
                 # calcular mse y agregar a lista
                 mse = np.mean(np.power(Y_data - Y_pred, 2), axis = 0)
                 cluster_mse.append(mse[0])
@@ -294,7 +300,7 @@ def cluster_evaluation(solar_database, pv_database, model, random_state=0):
         
         # plot cluster_sample
         plot_title = 'cluster '+ str(label)
-        plot_forecasting_model(pv_database, model, cluster_sample, title=plot_title)
+        plot_forecasting_model(pv_database, output_name, model, cluster_sample, title=plot_title)
         
         # plot gráfico estimación
         Y_data = np.concatenate(cluster_data)
