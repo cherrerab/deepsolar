@@ -12,6 +12,7 @@ from solarpv._tools import *
 import solarpv.database
 import solarpv.analytics
 import solarpv.noaa
+import solarpv.model
 
 # module level doc-string
 __doc__="""

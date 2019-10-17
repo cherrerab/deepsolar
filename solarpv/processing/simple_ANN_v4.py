@@ -17,7 +17,7 @@ power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019
 
 # compactar a base de 30min
 power_dataset = compact_database(power_dataset, 2, use_average=True)
-power_dataset = adjust_timestamps(power_dataset, 15*60)
+power_dataset = adjust_timestamps(power_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
@@ -27,7 +27,7 @@ temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15',
 
 # compactar a base de 30min
 temperature_dataset = compact_database(temperature_dataset, 2, use_average=True)
-temperature_dataset = adjust_timestamps(temperature_dataset, 15*60)
+temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
@@ -37,13 +37,14 @@ solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00
 
 # compactar a base de 30min
 solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
-solarimetric_dataset = adjust_timestamps(solarimetric_dataset, 30*60)
+solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
 
 #%%############################################################################
 ################################ ANALYSIS #####################################
 ###############################################################################
 from datetime import datetime, timedelta
 from solarpv.analytics import plot_2D_radiation_data
+from solarpv.analytics import plot_1D_radiation_data
 
 # plotear dataset potencia
 plot_2D_radiation_data(power_dataset, unit='kW', colname='Sistema', initial_date='27-08-2018',final_date='07-09-2019')

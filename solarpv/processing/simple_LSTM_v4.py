@@ -17,7 +17,7 @@ power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019
 
 # compactar a base de 30min
 power_dataset = compact_database(power_dataset, 2, use_average=True)
-#power_dataset = adjust_timestamps(power_dataset, -15*60)
+power_dataset = adjust_timestamps(power_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
@@ -27,7 +27,7 @@ temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15',
 
 # compactar a base de 30min
 temperature_dataset = compact_database(temperature_dataset, 2, use_average=True)
-#temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
+temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
@@ -37,13 +37,14 @@ solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00
 
 # compactar a base de 30min
 solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
-#solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
+solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
 
 
 #%%############################################################################
 ################################ ANALYSIS #####################################
 ###############################################################################
 from datetime import datetime, timedelta
+from solarpv.database import radiance_to_radiation
 from solarpv.analytics import plot_2D_radiation_data
 from solarpv.analytics import plot_1D_radiation_data
 
@@ -57,6 +58,8 @@ plot_1D_radiation_data(power_dataset, 'Sistema', '04-11-2018', '05-11-2018', mul
 plot_2D_radiation_data(temperature_dataset, unit='°C', colname='Module', initial_date='27-08-2018',final_date='07-09-2019')
 
 # plotear dataset solarimetrico
+plot_2D_radiation_data(radiance_to_radiation(solarimetric_dataset), unit='kWh/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
+
 plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
 plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Diffuse', initial_date='27-08-2018',final_date='07-09-2019')
 plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Direct', initial_date='27-08-2018',final_date='07-09-2019')
@@ -145,18 +148,20 @@ import matplotlib.pyplot as plt
 model = Sequential()
 
 # creamos la primera capa de input
-model.add(LSTM(units = 128, return_sequences = True, input_shape = (n_input,8)))
-keras.layers.Dropout(rate = 0.1)
+model.add(LSTM(units = 128, return_sequences = True, input_shape = (n_input, n_feature)))
+keras.layers.Dropout(rate = 0.2)
 
 # creamos la segunda capa LSTM (con DropOut)
 model.add(LSTM(units = 64, return_sequences = True))
-keras.layers.Dropout(rate = 0.1)
+keras.layers.Dropout(rate = 0.2)
 
 # creamos la tercera y cuarta capa (con DropOut)
-model.add(Dense(units = 64, activation = 'tanh'))
-keras.layers.Dropout(rate = 0.1)
-model.add(Dense(units = 64, activation = 'tanh'))
-keras.layers.Dropout(rate = 0.1)
+model.add(Dense(units = 64, activation = 'relu'))
+keras.layers.Dropout(rate = 0.2)
+model.add(Dense(units = 32, activation = 'relu'))
+keras.layers.Dropout(rate = 0.2)
+model.add(Dense(units = 32, activation = 'relu'))
+keras.layers.Dropout(rate = 0.2)
 
 # creamos la capa de salida
 model.add(Flatten())
