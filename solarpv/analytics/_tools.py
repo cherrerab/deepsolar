@@ -169,7 +169,7 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
     # plotear TSNE
     axs[0, 0].scatter(data_embedded[:,0], data_embedded[:,1], cmap='plasma',
                       c=clusterer.labels_, s=10.0)
-    axs[0, 0].set_title('TSNE embedding')
+    axs[0, 0].set_title('PCA embedding')
     
     # plotear clustering
     axs[0, 1].scatter(df_minmax[:,0], df_minmax[:,1], cmap='plasma',

@@ -37,8 +37,6 @@ solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00
 
 # compactar a base de 30min
 solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
-solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
-
 
 #%%############################################################################
 ################################ ANALYSIS #####################################
@@ -47,6 +45,7 @@ from datetime import datetime, timedelta
 from solarpv.database import radiance_to_radiation
 from solarpv.analytics import plot_2D_radiation_data
 from solarpv.analytics import plot_1D_radiation_data
+from solarpv.analytics import plot_performance_ratio
 
 # plotear dataset potencia
 plot_2D_radiation_data(power_dataset, unit='kW', colname='Sistema', initial_date='27-08-2018',final_date='07-09-2019')
@@ -65,6 +64,9 @@ plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Diffuse', in
 plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Direct', initial_date='27-08-2018',final_date='07-09-2019')
 
 plot_2D_radiation_data(solarimetric_dataset, unit='°C', colname='Temperature', initial_date='27-08-2018',final_date='07-09-2019')
+
+# plotear performance ratio
+plot_performance_ratio(power_dataset, solarimetric_dataset, '27-08-2018', '07-09-2019')
 
 #%%############################################################################
 ############################# SETUP DATASET ###################################
@@ -181,8 +183,8 @@ model_history = model.fit(X_train, Y_train, batch_size = 128, epochs = 256, vali
 test_mse, test_mae = model.evaluate(X_test, Y_test, batch_size = 30)
 
 plt.figure()
-plt.plot(model_history.history['loss'])
-plt.plot(model_history.history['val_loss'])
+plt.plot(model_history.history['loss'], c=(0.050383, 0.029803, 0.527975, 1.0))
+plt.plot(model_history.history['val_loss'], c=(0.798216, 0.280197, 0.469538, 1.0))
 plt.title('ANN model loss')
 plt.ylabel('Loss')
 plt.xlabel('Epoch')

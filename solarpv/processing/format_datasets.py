@@ -24,14 +24,14 @@ solar_1min = solarimetric_dataset(data_path, 'CR1000_Beauchef_min_Corregido', 4,
 solar_rad_1min = radiance_to_radiation(solar_1min)
 
 # checkear resultado con día soleado
-plot_1D_radiation_data(solar_rad_1min, 'Global', '04-11-2018', '05-11-2018')
+#plot_1D_radiation_data(solar_rad_1min, 'Global', '04-11-2018', '05-11-2018')
 
 # plotear dataset
-plot_2D_radiation_data(solar_rad_1min, unit='Wh/m2', colname='Global', initial_date='29-08-2018',final_date='07-09-2019')
+#plot_2D_radiation_data(solar_rad_1min, unit='Wh/m2', colname='Global', initial_date='29-08-2018',final_date='07-09-2019')
 
 # guardar dataset
-save_path = os.path.join(dir_path, 'solarimetric-1min-dataset.pkl')
-solar_1min.to_pickle(save_path)
+#save_path = os.path.join(dir_path, 'solarimetric-1min-dataset.pkl')
+#solar_1min.to_pickle(save_path)
 
 
 #%%

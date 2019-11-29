@@ -8,6 +8,7 @@ v1.0 - update, Aug 01 2019
 """
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import numpy as np
 
@@ -34,18 +35,34 @@ def plot_fraccion_difusa_claridad(database, lat=-33.45775, lon=70.66466111):
     :return:
         None
     """
-    
+    date_format = '%d-%m-%Y %H:%M'
     diffuse_rad = database['Diffuse'].values
     global_rad = database['Global'].values
     
+    # obtener fraccion difusa
     frac_dif = np.divide(diffuse_rad, global_rad)
     
+    # obtener claridad
     timestamp = database['Timestamp'].values
     ext_rad = [ext_irradiance(t, lat, lon) for t in timestamp]
     claridad = np.divide( global_rad, np.asarray(ext_rad) )
     
+    
+    # obtener colores
+    cmap = cm.get_cmap('plasma')
+    colors = []
+    for t in timestamp:
+        # obtener minuto del día
+        date = datetime.strptime(t, date_format)
+        date_tt = date.timetuple()
+        min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+        
+        t_x = 1 - min_day/(24*60.0)
+        # asignar color
+        colors.append(cmap(t_x))
+    
     plt.figure()
-    plt.scatter(claridad, frac_dif, c='k', s=0.8)
+    plt.scatter(claridad, frac_dif, c=colors, s=0.8)
     plt.ylim( (0, 1.0) )
     plt.xlim( (0, 1.0) )
     
@@ -205,7 +222,7 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
     
     # -------------------------------------------------------------------------
     # verificar bases de datos
-    assert ('Timestamp' in db_pv.columns) and ('Potencia' in db_pv.columns)
+    assert ('Timestamp' in db_pv.columns) and ('Sistema' in db_pv.columns)
     assert ('Timestamp' in db_solar.columns) and ('Global' in db_solar.columns)
     
     # verificar que los timesteps se correspondan
@@ -254,16 +271,16 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
     global_rad = db_solar['Global']
     global_rad = global_rad.values[ solar_index[0]:solar_index[1] ]
     
-    pv_power = db_pv['Potencia']
+    pv_power = db_pv['Sistema']
     pv_power = pv_power.values[ pv_index[0]:pv_index[1] ]
     
     plant_factor = 1000.0/16.2
     performance_ratio = []
     for i in range( len(pv_power) ):
-        if ( global_rad[i] != 0.0 ):
+        if ( global_rad[i] > 2.0 ):
             performance_ratio.append( plant_factor*(pv_power[i]/global_rad[i]) )
         else:
-            performance_ratio.append(np.nan)
+            performance_ratio.append(0.0)
     
     performance_ratio = np.array(performance_ratio)
         
@@ -273,23 +290,129 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
     
     claridad = []
     for i in range( len(pv_power) ):
-        if ( ext_rad[i] != 0.0 ):
+        if ( ext_rad[i] > 2.0 ):
             claridad.append( global_rad[i]/ext_rad[i] )
         else:
-            claridad.append( np.nan )
+            claridad.append( 0.0 )
             
     claridad = np.array(claridad)
     
+    # obtener colores
+    cmap = cm.get_cmap('plasma')
+    colors = []
+    for t in timestamp:
+        # obtener minuto del día
+        date = datetime.strptime(t, date_format)
+        date_tt = date.timetuple()
+        min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+        
+        t_x = 1 - min_day/(24*60.0)
+        # asignar color
+        colors.append(cmap(t_x))
+        
+    
     # plotear
     plt.figure()
-    plt.scatter(claridad, performance_ratio, c='k', s=0.8)
+    plt.scatter(claridad, performance_ratio, c=colors, s=0.8)
     
     plt.xlabel(u'Índice de Claridad')
     plt.ylabel(u'Performance Ratio')
     plt.xlim([0, 1.0])
+    plt.ylim([0, 1.0])
 
     return None
     
+#------------------------------------------------------------------------------
+# obtener gráfico fracción difusa vs claridad
+def plot_power_irradiance(db_pv, db_solar, start_date, stop_date):
+    """
+    -> None
+    
+    Plotea el gráfico de potencia PV vs irradiancia global.
+    
+    :param DataFrame db_pv:
+        base de datos que contiene el registro de 'Potencia' fotovoltaica.
+    :param DataFrame db_solar:
+        base de datos que contiene el registro de irradiancia 'Global'.
+        
+    :return:
+        None
+    """
+    # -------------------------------------------------------------------------
+    # verificar bases de datos
+    assert ('Timestamp' in db_pv.columns) and ('Sistema' in db_pv.columns)
+    assert ('Timestamp' in db_solar.columns) and ('Global' in db_solar.columns)
+    
+    # verificar que los timesteps se correspondan
+    date_format = '%d-%m-%Y %H:%M'
+    
+    timestep_pv = (datetime.strptime(db_pv.at[1, u'Timestamp'], date_format)
+                  -datetime.strptime(db_pv.at[0, u'Timestamp'], date_format) )
+    
+    timestep_solar = (datetime.strptime(db_solar.at[1, u'Timestamp'], date_format)
+                     -datetime.strptime(db_solar.at[0, u'Timestamp'], date_format) )
+    
+    assert timestep_solar.seconds==timestep_pv.seconds
+    
+    # -------------------------------------------------------------------------
+    # obtener indices
+    start_date = datetime.strptime( validate_date(start_date), date_format )
+    stop_date = datetime.strptime( validate_date(stop_date), date_format )
+    
+    # photovoltaic
+    pv_index = [-1,-1]
+    for i in db_pv.index:
+        date = datetime.strptime(db_pv.at[i,u'Timestamp'], date_format)
+        
+        if (date >= start_date) and (pv_index[0] == -1):
+            pv_index[0] = i
+            
+        if (date >= stop_date) and (pv_index[1] == -1):
+            pv_index[1] = i-1
+    
+    # solarimetric
+    solar_index = [-1,-1]
+    for i in db_solar.index:
+        date = datetime.strptime(db_solar.at[i,u'Timestamp'], date_format)
+        
+        if (date >= start_date) and (solar_index[0] == -1):
+            solar_index[0] = i
+            
+        if (date >= stop_date) and (solar_index[1] == -1):
+            solar_index[1] = i-1
+     
+    assert (solar_index[1]-solar_index[0]) == (pv_index[1]-pv_index[0])
+    
+    # -------------------------------------------------------------------------
+    # obtener datos a plotear
+    global_rad = db_solar['Global']
+    global_rad = global_rad.values[ solar_index[0]:solar_index[1] ]
+    
+    pv_power = db_pv['Sistema']
+    pv_power = pv_power.values[ pv_index[0]:pv_index[1] ]
+    
+    timestamp = db_solar['Timestamp'].values[ solar_index[0]:solar_index[1] ]
+    
+    # obtener colores
+    cmap = cm.get_cmap('plasma')
+    colors = []
+    for t in timestamp:
+        # obtener minuto del día
+        date = datetime.strptime(t, date_format)
+        date_tt = date.timetuple()
+        min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+        
+        t_x = 1 - min_day/(24*60.0)
+        # asignar color
+        colors.append(cmap(t_x))
+    
+    plt.figure()
+    plt.scatter(global_rad, pv_power, c=colors, s=0.8)
+    
+    plt.xlabel(u'Irradiancia Global, W/m2')
+    plt.ylabel(u'Potencia Sistema, kW')
+    
+    return None
     
     
     

@@ -157,8 +157,8 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
         # plotear
         axs[ix[0], ix[1]].plot(T_data, Y_data, ls='--', c='k')
         
-        axs[ix[0], ix[1]].plot(T_X, X[0,:,0], 'bo-')
-        axs[ix[0], ix[1]].plot(T_Y, Y_pred,'ro-')
+        axs[ix[0], ix[1]].plot(T_X, X[0,:,0], 'o-', c=(0.050383, 0.029803, 0.527975, 1.0))
+        axs[ix[0], ix[1]].plot(T_Y, Y_pred,'o-', c=(0.798216, 0.280197, 0.469538, 1.0))
         
         axs[ix[0], ix[1]].set_ylabel('PV Yield kW_avg')
         axs[ix[0], ix[1]].set_xlabel('data points')
@@ -197,7 +197,7 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
     plt.figure()
     
     # plotear Y_data vs Y_pred
-    plt.scatter(Y_data, Y_pred, **kargs)
+    plt.scatter(Y_data, Y_pred, c=(0.050383, 0.029803, 0.527975, 1.0), **kargs)
     
     # plotear linea 1:1
     plt.plot([0, 1], [0, 1], c='k')
@@ -230,7 +230,7 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
         modelo de forecasting a evaluar.
         
     :returns:
-        None
+        DataFrame
     """
     
     # realizar clustering sobre los datos
@@ -258,7 +258,9 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
     cluster_labels = np.where(cluster_labels==-1, num_labels-1, cluster_labels)
     
     # inicializar cluster_metrics
-    cluster_metrics = []
+    cluster_metrics = pd.DataFrame(index=np.arange(num_labels),
+                                   columns=['MAE', 'RMSE'])
+    
 
     # para cada etiqueta resultante del clustering
     for label in np.arange(num_labels):
@@ -272,41 +274,36 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
         cluster_data = []
         cluster_pred = []
         
-        # inicializar cluster_mse
-        cluster_mse = []
         # por cada una de las fechas del cluster
         for date in cluster_dates:
-            # obtener los cuatro forecasting_times de testing
-            hours = ['10:00', '13:00', '16:00', '19:00']
-            test_times = [date + ' ' + h for h in hours]
+            # obtener forecasting_times de testing
+            initial_hour = datetime.strptime('00:00','%H:%M')
+            hours = [initial_hour + timedelta(seconds=3600*i) for i in range(24)]
+            test_times = [date + ' ' + datetime.strftime(h,'%H:%M') for h in hours]
             
             # calcular mse de predicción en cada una de las horas
             for test_time in test_times:
                 Y_data, Y_pred = forecasting_test(pv_database, output_name, model, test_time)
-                # calcular mse y agregar a lista
-                mse = np.mean(np.power(Y_data - Y_pred, 2), axis = 0)
-                cluster_mse.append(mse[0])
                 
                 # agregar datos a cluster data
                 cluster_data.append(Y_data)
                 cluster_pred.append(Y_pred)
         
-        # calcular rmse del cluster
-        cluster_rmse = np.sqrt(np.mean(cluster_mse))
-        cluster_metrics.append( cluster_rmse  )
+        # calcular rmse y mae del cluster
+        Y_data = np.concatenate(cluster_data)
+        Y_pred = np.concatenate(cluster_pred)
         
-        # print métrica
-        print('cluster '+ str(label) + ' rmse: ' + str(cluster_rmse))
+        cluster_metrics.at[label, 'RMSE'] = np.sqrt(np.mean(np.power(Y_data - Y_pred, 2), axis = 0)[0])
+        cluster_metrics.at[label, 'MAE'] = np.mean(np.abs(Y_data - Y_pred))
         
         # plot cluster_sample
         plot_title = 'cluster '+ str(label)
         plot_forecasting_model(pv_database, output_name, model, cluster_sample, title=plot_title)
         
         # plot gráfico estimación
-        Y_data = np.concatenate(cluster_data)
-        Y_pred = np.concatenate(cluster_pred)
         plot_forecasting_accuracy(Y_data, Y_pred, title=plot_title, s=2.0)
-        
+    
+    print(cluster_metrics)    
     return cluster_metrics
                 
                 

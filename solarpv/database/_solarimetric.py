@@ -97,6 +97,7 @@ def solarimetric_dataset(path, sheet_name, header, usecols, keep_negatives=True,
         
     # remover filas filtradas            
     db.drop(index = remove_index, inplace=True)
+    data_count = db.shape[0]
     
     if not(fix_timestamps):
         return db
@@ -117,12 +118,15 @@ def solarimetric_dataset(path, sheet_name, header, usecols, keep_negatives=True,
     idx = pd.date_range(first_date, last_date, freq=time_freq)
     
     db.index = pd.DatetimeIndex( db[u'Timestamp'].values, dayfirst=True )
-    db = db.reindex( idx, fill_value=0.0 )
+    db = db.reindex( idx, fill_value=5000.0 )
     db[u'Timestamp'] = idx.strftime(date_format)
     
     # resetear index a enteros
     db = db.reset_index()
     db.drop('index',axis=1, inplace=True)
+    
+    # print missing data
+    print('missing data: ' + str(db.shape[0] - data_count))
   
     return db
 
