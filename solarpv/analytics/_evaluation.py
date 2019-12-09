@@ -132,9 +132,8 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
         try:
             assert start_index >= 0
             assert end_index < database.shape[0]
+            
         except AssertionError:
-            print('InputError: no es posible aplicar el modelo en la ventana'+
-                  'de tiempo especificada')
             return None
         
         # definir datos
@@ -157,8 +156,8 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
         # plotear
         axs[ix[0], ix[1]].plot(T_data, Y_data, ls='--', c='k')
         
-        axs[ix[0], ix[1]].plot(T_X, X[0,:,0], 'o-', c=(0.050383, 0.029803, 0.527975, 1.0))
-        axs[ix[0], ix[1]].plot(T_Y, Y_pred,'o-', c=(0.798216, 0.280197, 0.469538, 1.0))
+        axs[ix[0], ix[1]].plot(T_X, X[0,:,0], 'o-', c=[0.050383, 0.029803, 0.527975])
+        axs[ix[0], ix[1]].plot(T_Y, Y_pred,'o-', c=[0.798216, 0.280197, 0.469538])
         
         axs[ix[0], ix[1]].set_ylabel('PV Yield kW_avg')
         axs[ix[0], ix[1]].set_xlabel('data points')
@@ -197,7 +196,7 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
     plt.figure()
     
     # plotear Y_data vs Y_pred
-    plt.scatter(Y_data, Y_pred, c=(0.050383, 0.029803, 0.527975, 1.0), **kargs)
+    plt.scatter(Y_data, Y_pred, c=[0.050383, 0.029803, 0.527975],**kargs)
     
     # plotear linea 1:1
     plt.plot([0, 1], [0, 1], c='k')
@@ -212,7 +211,8 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
 
 #------------------------------------------------------------------------------
 # realizar evaluación respecto a clusters de días
-def cluster_evaluation(solar_database, pv_database, output_name, model, random_state=0):
+def cluster_evaluation(solar_database, pv_database, output_name, model, 
+                       plot_clusters=True, random_state=0):
     """
     -> None
     
@@ -228,13 +228,15 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
         nombre de la columna que contiene los datos del set Y.
     :param keras.model model:
         modelo de forecasting a evaluar.
+    :param bool plot_clusters:
+        Especifica si se desea realizar los gráficos resultantes del clustering.
         
     :returns:
         DataFrame
     """
     
     # realizar clustering sobre los datos
-    cluster_labels = np.array( cluster_daily_radiation(solar_database) )
+    cluster_labels = np.array( cluster_daily_radiation(solar_database, plot_clusters=plot_clusters) )
     
     # obtener lista de días
     date_format = '%d-%m-%Y %H:%M'
@@ -254,8 +256,7 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
     
     random.seed(random_state)
     
-    num_labels = np.max(cluster_labels) + 2
-    cluster_labels = np.where(cluster_labels==-1, num_labels-1, cluster_labels)
+    num_labels = np.max(cluster_labels) + 1
     
     # inicializar cluster_metrics
     cluster_metrics = pd.DataFrame(index=np.arange(num_labels),
@@ -283,7 +284,10 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
             
             # calcular mse de predicción en cada una de las horas
             for test_time in test_times:
-                Y_data, Y_pred = forecasting_test(pv_database, output_name, model, test_time)
+                try:
+                    Y_data, Y_pred = forecasting_test(pv_database, output_name, model, test_time)
+                except TypeError:
+                    continue
                 
                 # agregar datos a cluster data
                 cluster_data.append(Y_data)
@@ -301,7 +305,7 @@ def cluster_evaluation(solar_database, pv_database, output_name, model, random_s
         plot_forecasting_model(pv_database, output_name, model, cluster_sample, title=plot_title)
         
         # plot gráfico estimación
-        plot_forecasting_accuracy(Y_data, Y_pred, title=plot_title, s=2.0)
+        plot_forecasting_accuracy(Y_data, Y_pred, title=plot_title, s=0.1)
     
     print(cluster_metrics)    
     return cluster_metrics

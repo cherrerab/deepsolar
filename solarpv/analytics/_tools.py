@@ -8,6 +8,7 @@ v1.0 - update, Aug 01 2019
 """
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import numpy as np
 import pandas as pd
@@ -85,7 +86,7 @@ def day_cloudless_index(day_global, day_diffuse):
 
 #------------------------------------------------------------------------------
 # realizar clustering sobre los datos díarios de radiación
-def cluster_daily_radiation(database, eps=0.07, min_samples=9):
+def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=True):
     """
     -> list
     
@@ -101,6 +102,8 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
     :param int min_samples:
         La cantidad mínima de puntos dentro de la vecindad de un punto para que
         este último se considere un core-point.
+    :param bool plot_clusters:
+        Especifica si se desea realizar los gráficos resultantes del clustering.
         
     :returns:
         lista con las etiquetas de cada día.
@@ -125,8 +128,8 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
                       columns = ['clear_sky', 'cloudless','smoothness'])
     
     # preparar filtro gaussiano
-    x = np.linspace(-1,1,15)
-    sigma, mu = 1.0, 0.0
+    x = np.linspace(-1,1,60)
+    sigma, mu = 30.0, 0.0
     gaussian = np.exp(-( (x-mu)**2 / ( 2.0 * sigma**2 ) ) )
     
     for date in dg.columns:
@@ -143,7 +146,8 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
         smoothed_data =  np.convolve(global_data, gaussian, mode='same')
         smoothed_data = smoothed_data/np.sum( gaussian )
         
-        smooth_error = np.sum( np.abs(global_data - smoothed_data) )
+        smooth_error = np.mean( np.power(global_data - smoothed_data, 2) )
+        smooth_error = np.sqrt(smooth_error)
         
         # asignar al dataframe
         df.at[date, 'clear_sky'] = clear_sky
@@ -158,33 +162,59 @@ def cluster_daily_radiation(database, eps=0.07, min_samples=9):
     
     min_max_scaler = preprocessing.MinMaxScaler()
     df_minmax = min_max_scaler.fit_transform(features)
-
+    
     # realizar clustering
     clusterer = DBSCAN(eps=eps, min_samples=min_samples).fit(df_minmax)
+    cluster_labels = clusterer.labels_
     
-    # plotear resultado
+    # corregir labels
+    num_labels = np.max(cluster_labels) + 2
+    cluster_labels = np.where(cluster_labels==-1, num_labels-1, cluster_labels)
+    
     data_embedded = PCA(n_components = 2).fit_transform(df_minmax)
     
-    fig, axs = plt.subplots(2, 2)
-    # plotear TSNE
-    axs[0, 0].scatter(data_embedded[:,0], data_embedded[:,1], cmap='plasma',
-                      c=clusterer.labels_, s=10.0)
-    axs[0, 0].set_title('PCA embedding')
-    
-    # plotear clustering
-    axs[0, 1].scatter(df_minmax[:,0], df_minmax[:,1], cmap='plasma',
-                      c=clusterer.labels_, s=10.0)
-    axs[0, 1].set_title('cloudless vs clear_sky')
-    
-    axs[1, 0].scatter(df_minmax[:,0], df_minmax[:,2], cmap='plasma',
-                     c=clusterer.labels_, s=10.0)
-    axs[1, 0].set_title('smoothness vs clear_sky')
-    
-    axs[1, 1].scatter(df_minmax[:,1], df_minmax[:,2], cmap='plasma',
-                     c=clusterer.labels_, s=10.0)
-    axs[1, 1].set_title('smoothness vs cloudless')
-    
-    return clusterer.labels_
+    # plotear resultado
+    if plot_clusters:
+        fig, axs = plt.subplots(2, 2)
+        # plotear TSNE
+        axs[0, 0].scatter(data_embedded[:,0], data_embedded[:,1], cmap='plasma',
+                          c=cluster_labels, s=5.0)
+        axs[0, 0].set_title('PCA embedding')
+        
+        # plotear clustering
+        axs[0, 1].scatter(df_minmax[:,0], df_minmax[:,1], cmap='plasma',
+                          c=cluster_labels, s=5.0)
+        axs[0, 1].set_title('cloudless vs clear_sky')
+        
+        axs[1, 0].scatter(df_minmax[:,0], df_minmax[:,2], cmap='plasma',
+                          c=cluster_labels, s=5.0)
+        axs[1, 0].set_title('smoothness vs clear_sky')
+        
+        axs[1, 1].scatter(df_minmax[:,1], df_minmax[:,2], cmap='plasma',
+                          c=cluster_labels, s=5.0)
+        axs[1, 1].set_title('smoothness vs cloudless')
+        
+        # plotear conjunto de días de un mismo cluster:     
+        for label in np.arange(num_labels):
+            # crear nueva figura
+            plt.figure()
+            # obtener fechas correspondientes a la etiqueta
+            cluster_dates = dg.columns[cluster_labels==label]
+            
+            for date in cluster_dates:
+                # obtener valores de irradiancia global 
+                irrad_values = dg[date].values
+                # plotear
+                plt.plot(irrad_values, c=(0.050383, 0.029803, 0.527975, 0.15))
+                plt.ylim([0.0, 25.0])
+                
+                # agregar elementos del gráfico
+                plt.xlabel('Data points')
+                plt.ylabel('Irradiancia W/m2')
+                
+                plt.title('cluster ' + str(label))
+            
+    return cluster_labels
     
 #------------------------------------------------------------------------------
 # obtener los n días más soleados en el dataset
@@ -222,8 +252,8 @@ def get_n_sunniest_days(database, n_days=5):
                       columns = ['clear_sky', 'cloudless','smoothness'])
     
     # preparar filtro gaussiano
-    x = np.linspace(-1,1,15)
-    sigma, mu = 1.0, 0.0
+    x = np.linspace(-1,1,60)
+    sigma, mu = 30.0, 0.0
     gaussian = np.exp(-( (x-mu)**2 / ( 2.0 * sigma**2 ) ) )
     
     for date in dg.columns:
