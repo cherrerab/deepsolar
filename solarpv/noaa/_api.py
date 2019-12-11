@@ -42,13 +42,13 @@ def get_key_times(key):
     
     # obtener tiempos del key -------------------------------------------------
     _, _, _, start, end, creat = key.split('_')
-    
+
     # tiempo de comienzo
     start_year = int(start[1:5])
     start_yday = int(start[5:8])
     start_hour = int(start[8:10])
     start_min = int(start[10:12])
-    start_sec = round(int(start[12:15])/10.0)
+    start_sec = floor(int(start[12:15])/10.0)
     
     start_date = datetime(start_year, 1, 1, start_hour, start_min, start_sec)
     start_date += timedelta( days=(start_yday-1) )
@@ -59,7 +59,7 @@ def get_key_times(key):
     end_yday = int(end[5:8])
     end_hour = int(end[8:10])
     end_min = int(end[10:12])
-    end_sec = round(int(end[12:15])/10.0)
+    end_sec = floor(int(end[12:15])/10.0)
     
     end_date = datetime(end_year, 1, 1, end_hour, end_min, end_sec)
     end_date += timedelta( days=(end_yday-1) )

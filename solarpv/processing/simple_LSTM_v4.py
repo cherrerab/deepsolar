@@ -9,7 +9,7 @@ from solarpv.database import radiance_to_radiation
 
 # -----------------------------------------------------------------------------
 # cargar datos de potencia-SMA
-sma_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\sma_system_power_15min_dataset.pkl'
+sma_15min_path = 'C:\\Cristian\\003. SMA DATASET\\005. 15 MINUTES SYSTEM DATA2\\sma-15min-dataset.pkl'
 power_dataset = pd.read_pickle(sma_15min_path)
 power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -17,7 +17,7 @@ power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019
 power_dataset = compact_database(power_dataset, 2, use_average=True)
 power_dataset = adjust_timestamps(power_dataset, -15*60)
 
-# -----------------------------------------------------------------------------
+#%% -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
 temp_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\sma_temperature_15min_dataset.pkl'
 temperature_dataset = pd.read_pickle(temp_15min_path)
