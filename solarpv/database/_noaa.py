@@ -26,6 +26,8 @@ from time import sleep
 
 import cv2
 
+from keras.models import Model
+
 # -----------------------------------------------------------------------------
 # base de datos NOAA GOES16
 def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
@@ -80,11 +82,8 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
             # obtener timestamp
             start_date, end_date = get_key_times(file_name)
             start_date = datetime.strptime(start_date, '%d-%m-%Y %H:%M:%S')
-            end_date = datetime.strptime(end_date, '%d-%m-%Y %H:%M:%S')
             
-            time_delta = (end_date - start_date).seconds
-            file_date = start_date + timedelta(seconds=time_delta/2.0)
-            nc_list.append( (file_date, os.path.join(path, f)) )
+            nc_list.append( (start_date, os.path.join(path, f)) )
         
     # ordenar
     nc_list.sort()
@@ -116,11 +115,18 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
         db.at[i, u'Timestamp'] = datetime.strftime(timestamp, date_format)
         
         # obtener imagen satelital correspondiente
-        nearest_file = min(nc_list, key=lambda x: abs(x[0] - timestamp))
-        data_time, data_path = nearest_file
+        for j in range( len(nc_list) ):
+            # obtener timestamp de inicio del scaneo
+            data_start, data_path = nc_list[j]
+            
+            # si la imagen fue tomada después del timestamp de  interés
+            if timestamp < data_start:
+                # la imagen correspondiente es la tomada anteriormente
+                data_start, data_path = nc_list[j-1]
+                break
         
         # checkar sincronización
-        #print((db.at[i, u'Timestamp'], datetime.strftime(data_time, date_format)))
+        print((db.at[i, u'Timestamp'], datetime.strftime(data_start, date_format)))
         
         # formatear data
         data = bound_goes16_data(data_path, bound_indexes)
@@ -265,6 +271,60 @@ def goes16_dataset_v2(dir_path, timestamps, size, lat=-33.45775, lon=-70.6646611
     db = db.reset_index()
     db.drop('index',axis=1, inplace=True)
   
+    return db
+
+# -----------------------------------------------------------------------------
+# reducir dimensionalmente base de datos NOAA GOES16
+def encode_goes16_dataset(database, autoencoder, latent_space_name):
+    """
+    -> DataFrame
+    
+    Realiza una reducción dimensional sobre cada una de las imágenes satelitales
+    contenidas en dataset a partir del output del espacio latente del autoencoder.
+    
+    :param DataFrame dataset:
+        base de datos que contiene el registro temporal de imagenes satelitales.
+    :param keras.model autoencoder:
+        Autoencoder entrenado sobre el mismo tipo de imágenes satelitales.
+    :param str latent_space_name:
+        Nombre de la capa correspondiente al espacio latente del autoencoder.
+        
+    :returns:
+        Dataframe con el espacio latente de cada imagen del database.
+    """
+    
+    # configurar encoder
+    latent_space = autoencoder.get_layer(latent_space_name)
+    encoding_dim = int(latent_space.output.shape[1])
+    
+    encoder = Model(inputs=autoencoder.input, output=latent_space.output)
+    
+    # comprobar correspondencia entre tamaños de imágenes
+    img_size = np.sqrt(database.shape[1] - 1)
+    assert int(autoencoder.input.shape[1]) == img_size
+    
+    # procesar base de datos --------------------------------------------------
+    
+    # inicializar nuevo dataframe
+    colnames = [u'Timestamp'] + list(np.arange(encoding_dim))
+    db = pd.DataFrame(0.0, index=database.index, columns=colnames)
+    db[u'Timestamp'] = db[u'Timestamp'].astype(str)
+    db[u'Timestamp'] = database[u'Timestamp']
+    
+    bar = ProgressBar()
+    for i in bar( database.index ):
+        
+        # procesar imagen original
+        rad_data = database.iloc[i, 1:].values
+        rad_data = np.nan_to_num( np.reshape(rad_data, [1, img_size, img_size, 1]) )
+        
+        # obtener reducción dimensional
+        encoded_data = encoder.predict(rad_data)
+        
+        # añadir datos al nuevo dataset
+        db.at[i, 1:] = encoded_data.reshape( (1, encoding_dim) )[0]
+        
+    # retornar dataset
     return db
 
 # -----------------------------------------------------------------------------

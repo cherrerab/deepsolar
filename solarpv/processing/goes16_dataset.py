@@ -9,7 +9,7 @@ from solarpv.database import adjust_timestamps
 
 # -----------------------------------------------------------------------------
 # cargar datos de potencia-SMA
-sma_15min_path = 'C:\\Cristian\\003. SMA DATASET\\005. 15 MINUTES SYSTEM DATA2\\sma-15min-dataset.pkl'
+sma_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/system-power-15min-dataset.pkl'
 power_dataset = pd.read_pickle(sma_15min_path)
 power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -19,15 +19,21 @@ power_dataset = adjust_timestamps(power_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # obtener timestamps
-data_timestamps = power_dataset['Timestamp'].values[10510:10610]
+data_timestamps = power_dataset['Timestamp']
 
 #%% generar goes-16 database --------------------------------------------------
 from solarpv.database import goes16_dataset
+from solarpv.database import show_goes16_dataset
+import os
 
 # dirección de carpetas con imágenes satelilates
-dir_paths = ['D:\\goes16_ABI-L1b-RadF_M3_C04', 'D:\\goes16_ABI-L1b-RadF_M6_C04']
+dir_paths = ['/media/hecate/Seagate Backup Plus Drive/goes16_ABI-L1b-RadF_M3_C04', '/media/hecate/Seagate Backup Plus Drive/goes16_ABI-L1b-RadF_M6_C04']
 
 # construir base de datos
-goes_16_ds = goes16_dataset(dir_paths, data_timestamps, 100)
+goes_16_ds = goes16_dataset(dir_paths, data_timestamps, 128)
 
+# guardar dataset
+save_dir = '/media/hecate/Seagate Backup Plus Drive/datasets'
+save_path = os.path.join(save_dir, 'goes16-30min-dataset.pkl')
+goes_16_ds.to_pickle(save_path)
 

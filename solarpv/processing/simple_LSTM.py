@@ -1,55 +1,121 @@
 # -*- coding: utf-8 -*-
-
-###############################################################################
-############################# PROCESS DATA ####################################
-###############################################################################
+#%% load data -----------------------------------------------------------------
 import pandas as pd
 
-from solarpv.analytics import cluster_daily_radiation
 from solarpv.database import compact_database
+from solarpv.database import select_date_range
 from solarpv.database import adjust_timestamps
+from solarpv.database import radiance_to_radiation
 
-from datetime import datetime
-
-# importar datasets - 30 min
+# -----------------------------------------------------------------------------
+# cargar datos de potencia-SMA
 sma_15min_path = 'C:\\Cristian\\003. SMA DATASET\\005. 15 MINUTES SYSTEM DATA2\\sma-15min-dataset.pkl'
-sma_15min_dataset = pd.read_pickle(sma_15min_path)
-sma_15min_dataset = compact_database(sma_15min_dataset, 2, use_average=True)
-sma_15min_dataset = adjust_timestamps(sma_15min_dataset, 15*60)
+power_dataset = pd.read_pickle(sma_15min_path)
+power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
-#%%############################################################################
-################################ ANALYSIS #####################################
-###############################################################################
-from datetime import timedelta
-from solarpv.analytics import plot_1D_radiation_data
+# compactar a base de 30min
+power_dataset = compact_database(power_dataset, 2, use_average=True)
+power_dataset = adjust_timestamps(power_dataset, -15*60)
+
+#%% -----------------------------------------------------------------------------
+# cargar datos de temperatura-SMA
+temp_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\sma_temperature_15min_dataset.pkl'
+temperature_dataset = pd.read_pickle(temp_15min_path)
+temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
+
+# compactar a base de 30min
+temperature_dataset = compact_database(temperature_dataset, 2, use_average=True)
+temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
+
+# -----------------------------------------------------------------------------
+# cargar datos solarimétricos
+solar_1min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\solarimetric_1min_dataset.pkl'
+solarimetric_dataset = pd.read_pickle(solar_1min_path)
+solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
+
+# compactar a base de 30min
+solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
+
+#%% analysis ------------------------------------------------------------------
+from datetime import datetime, timedelta
 from solarpv.analytics import plot_2D_radiation_data
+from solarpv.analytics import plot_1D_radiation_data
+from solarpv.analytics import plot_performance_ratio
+
+# plotear dataset potencia
+plot_2D_radiation_data(power_dataset, unit='kW', colname='Sistema', initial_date='27-08-2018',final_date='07-09-2019')
 
 # checkear resultado con día soleado
-plot_1D_radiation_data(sma_15min_dataset, 'Sistema', '04-11-2018', '05-11-2018', multiply_factor=80)
+plot_1D_radiation_data(power_dataset, 'Sistema', '04-11-2018', '05-11-2018', multiply_factor=40)
+plot_1D_radiation_data(radiance_to_radiation(solarimetric_dataset), 'Global', '04-11-2018', '05-11-2018', multiply_factor=1)
 
-# plotear dataset
-plot_2D_radiation_data(sma_15min_dataset, unit='kW', colname='Sistema', initial_date='28-08-2018',final_date='25-09-2019')
+# plotear dataset temperatura
+plot_2D_radiation_data(temperature_dataset, unit='°C', colname='Module', initial_date='27-08-2018',final_date='07-09-2019')
 
-#%%############################################################################
-############################# SETUP DATASET ###################################
-###############################################################################
-import numpy as np
+# plotear dataset solarimetrico
+plot_2D_radiation_data(radiance_to_radiation(solarimetric_dataset), unit='kWh/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
+
+plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Diffuse', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Direct', initial_date='27-08-2018',final_date='07-09-2019')
+
+plot_2D_radiation_data(solarimetric_dataset, unit='°C', colname='Temperature', initial_date='27-08-2018',final_date='07-09-2019')
+
+# plotear performance ratio
+plot_performance_ratio(power_dataset, solarimetric_dataset, '27-08-2018', '07-09-2019')
+
+#%% setup dataset -------------------------------------------------------------
 from solarpv.database import setup_lstm_dataset
 from solarpv.database import lstm_standard_scaling
 
-dataset = sma_15min_dataset[['Timestamp','Sistema']]
 
-# time window size
+import pandas as pd
+
+# inicilizar dataset
+colnames = ['Timestamp', 'Power', 'Module Temperature', 'External Temperature', 'Global', 'Diffuse', 'Direct', 'n_day', 'min_day']
+dataset = pd.DataFrame(0.0, index=power_dataset.index, columns=colnames)
+
+# asignar columna de timestamp y potencia
+dataset['Timestamp'] = power_dataset['Timestamp']
+dataset['Power'] = power_dataset['Sistema']
+
+dataset['Module Temperature'] = temperature_dataset['Module']
+dataset['External Temperature'] = solarimetric_dataset['Temperature']
+
+dataset['Global'] = solarimetric_dataset['Global']
+dataset['Diffuse'] = solarimetric_dataset['Diffuse']
+dataset['Direct'] = solarimetric_dataset['Direct']
+
+# -----------------------------------------------------------------------------
+# rellenar resto columnas
+date_format = '%d-%m-%Y %H:%M'
+for i in dataset.index:
+    # obtener timestamp del dato
+    timestamp = dataset.at[i, 'Timestamp']
+    timestamp = datetime.strptime(timestamp, date_format)
+    
+    date_tt = timestamp.timetuple()
+    
+    # calcular minuto del día y día en el año
+    min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+    n_day = date_tt.tm_yday
+    
+    # asignar al dataset
+    dataset.at[i, 'n_day'] = n_day
+    dataset.at[i, 'min_day'] = min_day
+
+# ----------------------------------------------------------------------------- 
+# setup time windows
 n_input = 12
 n_output = 6
-overlap = 18
+overlap = 3
 
 # realizar dataset split
-X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset, 'Sistema', 8, 2, n_input, n_output, overlap, ['Timestamp'])
+X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset, 'Power', 8, 2, n_input, n_output, overlap, ['Timestamp'])
 
 # -----------------------------------------------------------------------------
 # normalización
-X_train, X_test, std_scaler = lstm_standard_scaling(X_train, X_test, Y_train, Y_test)
+X_train, X_test, std_scaler = lstm_standard_scaling(X_train, X_test)
 
 # reshape dataset
 n_feature = X_train.shape[2]
@@ -60,9 +126,7 @@ feature_max = std_scaler[0, 1]
 Y_train = (Y_train - feature_min)/(feature_max-feature_min)
 Y_test = (Y_test - feature_min)/(feature_max-feature_min)
 
-#%%############################################################################
-############################### ANN MODEL #####################################
-###############################################################################
+#%% train lstm model ----------------------------------------------------------
 import keras
 from keras.layers import LSTM
 from keras.models import Sequential
@@ -78,24 +142,19 @@ import matplotlib.pyplot as plt
 model = Sequential()
 
 # creamos la primera capa de input
-model.add(LSTM(units = 128, return_sequences = True, input_shape = (n_input,n_feature)))
+model.add(LSTM(units = 128, return_sequences = True, input_shape = (n_input, n_feature)))
 keras.layers.Dropout(rate = 0.2)
 
 # creamos la segunda capa LSTM (con DropOut)
-model.add(LSTM(units = 128, return_sequences = True))
+model.add(LSTM(units = 64, return_sequences = True))
 keras.layers.Dropout(rate = 0.2)
 
 # creamos la tercera y cuarta capa (con DropOut)
-model.add(Dense(units = 128, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-
-model.add(Dense(units = 128, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-
 model.add(Dense(units = 64, activation = 'relu'))
 keras.layers.Dropout(rate = 0.2)
-
-model.add(Dense(units = 64, activation = 'relu'))
+model.add(Dense(units = 32, activation = 'relu'))
+keras.layers.Dropout(rate = 0.2)
+model.add(Dense(units = 32, activation = 'relu'))
 keras.layers.Dropout(rate = 0.2)
 
 # creamos la capa de salida
@@ -108,39 +167,32 @@ model.compile(optimizer = 'adam', loss = 'mse', metrics = ['mae'])
 # entrenamos el modelo
 model_history = model.fit(X_train, Y_train, batch_size = 128, epochs = 256, validation_data = (X_test, Y_test))
 
-#%%############################################################################
-####################### TRAINING EVALUATION ###################################
-###############################################################################
+#%% training evaluation -------------------------------------------------------
 
 # visualizamos la evolucion de la funcion de perdida
 test_mse, test_mae = model.evaluate(X_test, Y_test, batch_size = 30)
 
 plt.figure()
-plt.plot(model_history.history['loss'])
-plt.plot(model_history.history['val_loss'])
+plt.plot(model_history.history['loss'], c=(0.050383, 0.029803, 0.527975, 1.0))
+plt.plot(model_history.history['val_loss'], c=(0.798216, 0.280197, 0.469538, 1.0))
 plt.title('ANN model loss')
 plt.ylabel('Loss')
 plt.xlabel('Epoch')
 plt.legend(['train', 'validation'], loc='upper right')
 plt.show()
 
-#%%############################################################################
-########################### LOAD SOLAR DATA ###################################
-###############################################################################
+#%% load solar data -----------------------------------------------------------
 from solarpv.database import compact_database
-from solarpv.database import select_date_range
-from solarpv.database import radiance_to_radiation
 
 # cargar datos solarimetricos
-solar_1min_path = 'C:\\Cristian\\001. SOLARIMETRIC DATA\\solarimetric-1min-dataset.pkl'
+solar_1min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\solarimetric_1min_dataset.pkl'
 solar_1min_dataset = pd.read_pickle(solar_1min_path)
-solar_1min_dataset = select_date_range(solar_1min_dataset, '27-08-2018 00:00', '25-09-2019 00:00')
+solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:00', '07-09-2019 00:00')
 solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)
+solar_5min_dataset = compact_database(solar_1min_dataset, 5, use_average=True)
 
-#%%############################################################################
-########################## MODEL EVALUATION ###################################
-###############################################################################
-
+#%% model evaluation ----------------------------------------------------------
+import numpy as np
 from solarpv.database import compact_database
 from solarpv.database import select_date_range
 from solarpv.database import radiance_to_radiation
@@ -154,7 +206,5 @@ for i in np.arange(std_scaler.shape[0]):
     feature_max = std_scaler[i, 1]
     eval_data.iloc[:,i+1] = (eval_data.iloc[:,i+1] - feature_min)/(feature_max-feature_min)
 
-
 # evaluar modelo de forecasting
-cluster_metrics = cluster_evaluation(solar_1min_dataset, eval_data, model)
-
+cluster_metrics = cluster_evaluation(solar_5min_dataset, eval_data, 'Power', model, plot_clusters=True, random_state=33)

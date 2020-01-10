@@ -93,7 +93,7 @@ X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset, 'Power', 8, 2, n_
 
 # -----------------------------------------------------------------------------
 # normalización
-X_train, X_test, std_scaler = lstm_standard_scaling(X_train, X_test, Y_train, Y_test)
+X_train, X_test, std_scaler = lstm_standard_scaling(X_train, X_test)
 
 # reshape dataset
 n_feature = X_train.shape[2]

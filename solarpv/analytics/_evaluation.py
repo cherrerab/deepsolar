@@ -311,28 +311,3 @@ def cluster_evaluation(solar_database, pv_database, output_name, model,
     return cluster_metrics
                 
                 
-            
-            
-            
-            
-            
-            
-            
-        
-        
-        
-        
-        
-    
-    
-
-
-    
-    
-    
-    
-    
-    
-    
-    
-    

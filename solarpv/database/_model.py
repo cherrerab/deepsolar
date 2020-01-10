@@ -205,7 +205,7 @@ def setup_lstm_dataset(dataset, output_name, days_train, days_test,
 
 # -----------------------------------------------------------------------------
 # normalizar sets de datos de entrenamiento y validación (X_train, X_test)
-def lstm_standard_scaling(X_train, X_test, Y_train, Y_test):
+def lstm_standard_scaling(X_train, X_test):
     """
     -> numpy.array, numpy.array
     
