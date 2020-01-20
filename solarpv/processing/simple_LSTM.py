@@ -9,7 +9,7 @@ from solarpv.database import radiance_to_radiation
 
 # -----------------------------------------------------------------------------
 # cargar datos de potencia-SMA
-sma_15min_path = 'C:\\Cristian\\003. SMA DATASET\\005. 15 MINUTES SYSTEM DATA2\\sma-15min-dataset.pkl'
+sma_15min_path = 'C:\\Cristian\\datasets\\sma_system_15min_dataset.pkl'
 power_dataset = pd.read_pickle(sma_15min_path)
 power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -17,9 +17,9 @@ power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019
 power_dataset = compact_database(power_dataset, 2, use_average=True)
 power_dataset = adjust_timestamps(power_dataset, -15*60)
 
-#%% -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
-temp_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\sma_temperature_15min_dataset.pkl'
+temp_15min_path = 'C:\\Cristian\\datasets\\sma_temperature_15min_dataset.pkl'
 temperature_dataset = pd.read_pickle(temp_15min_path)
 temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -29,7 +29,7 @@ temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
-solar_1min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\solarimetric_1min_dataset.pkl'
+solar_1min_path = 'C:\\Cristian\\datasets\\solarimetric_1min_dataset.pkl'
 solarimetric_dataset = pd.read_pickle(solar_1min_path)
 solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
 
@@ -185,7 +185,7 @@ plt.show()
 from solarpv.database import compact_database
 
 # cargar datos solarimetricos
-solar_1min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\solarimetric_1min_dataset.pkl'
+solar_1min_path = 'C:\\Cristian\\datasets\\solarimetric_1min_dataset.pkl'
 solar_1min_dataset = pd.read_pickle(solar_1min_path)
 solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:00', '07-09-2019 00:00')
 solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)
@@ -207,4 +207,4 @@ for i in np.arange(std_scaler.shape[0]):
     eval_data.iloc[:,i+1] = (eval_data.iloc[:,i+1] - feature_min)/(feature_max-feature_min)
 
 # evaluar modelo de forecasting
-cluster_metrics = cluster_evaluation(solar_5min_dataset, eval_data, 'Power', model, plot_clusters=True, random_state=33)
+cluster_metrics = cluster_evaluation(solar_5min_dataset, [eval_data], 'Power', model, plot_clusters=True, random_state=33)

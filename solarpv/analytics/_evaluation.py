@@ -23,16 +23,16 @@ import numpy as np
 
 #------------------------------------------------------------------------------
 # evaluar modelo en cierto periodo de tiempo
-def forecasting_test(database, output_name, model, forecasting_date):
+def forecasting_test(datasets, output_name, model, forecasting_date):
     """
     -> (np.array, np.array)
     
     realiza una predicción de generación (forecasting) a partir del
     forecasting_date especificado, utilizando el modelo entregado.
     
-    :param DataFrame database:
-        base de datos que contiene el registro de generación fotovoltaica en
-        el tiempo.
+    :param list(DataFrame) datasets:
+        lista que contiene los datasets con los atributos correspondientes a
+        los inputs del model de pronóstico.
     :param str output_name:
         nombre de la columna que contiene los datos del set Y
     :param keras.model model:
@@ -44,9 +44,12 @@ def forecasting_test(database, output_name, model, forecasting_date):
         tupla de np.arrays de la forma (Y_data, Y_pred)
     """
     
+    # obtener dataset con datos de potencias PV (Y)
+    system_ds = datasets[0]
+    
     # obtener index correspondiente a forecasting_date
     forecasting_date = validate_date(forecasting_date)
-    date_index = np.where( database['Timestamp']==forecasting_date)[0][0]
+    date_index = np.where( system_ds['Timestamp']==forecasting_date)[0][0]
     
     # obtener ventana de tiempo
     n_input = int(model.input.shape[1])
@@ -58,18 +61,21 @@ def forecasting_test(database, output_name, model, forecasting_date):
     # checkear ventana de tiempo
     try:
         assert start_index >= 0
-        assert end_index < database.shape[0]
+        assert end_index < system_ds.shape[0]
     except AssertionError:
         print('InputError: no es posible aplicar el modelo en la ventana'+
               'de tiempo especificada')
         return None
     
     # definir datos
-    Y_data = database[output_name].iloc[date_index:end_index].values
+    Y_data = system_ds[output_name].iloc[date_index:end_index].values
     Y_data = np.reshape(Y_data, (n_output,-1))
     
-    X_data = database.iloc[start_index:end_index]
-    X, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
+    X = []
+    for ds in datasets:
+        X_data = ds.iloc[start_index:end_index]
+        X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
+        X.append(X_ds)
     
     # aplicar modelo
     Y_pred = model.predict(X)
@@ -81,7 +87,7 @@ def forecasting_test(database, output_name, model, forecasting_date):
 
 #------------------------------------------------------------------------------
 # obtener gráficos de predicción en cuatro días distintos al azar
-def plot_forecasting_model(database, output_name, model, forecasting_date, 
+def plot_forecasting_model(datasets, output_name, model, forecasting_date, 
                            hours=['10:00','13:00','16:00','19:00'],
                            time_margin=12, title=''):
     """
@@ -90,11 +96,11 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
     realiza el gráfico de forecasting en el día forecasting_date, utilizando el
     modelo especificado, en 4 horas a lo largo del día especificado.
     
-    :param DataFrame database:
-        base de datos que contiene el registro de generación fotovoltaica en
-        el tiempo.
+    :param list(DataFrame) datasets:
+        lista que contiene los datasets con los atributos correspondientes a
+        los inputs del model de pronóstico.
     :param str output_name:
-        nombre de la columna que contiene los datos del set Y.
+        nombre de la columna del primer dataset que contiene los datos del set Y.
     :param keras.model model:
         modelo de forecasting a evaluar.
     :param str forecasting_date:
@@ -107,6 +113,9 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
     ;returns:
         None
     """
+    
+    # obtener dataset con datos de Y
+    system_ds = datasets[0]
     
     # incializar plot
     fig, axs = plt.subplots(2, 2)
@@ -122,7 +131,7 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
     
     for test_time, ix in zip(test_times, plot_axs):
         # obtener index correspondiente a forecasting_date
-        date_index = np.where( database['Timestamp']==test_time)[0][0]
+        date_index = np.where( system_ds['Timestamp']==test_time )[0][0]
         
         # obtener ventana de tiempo
         start_index = date_index - n_input
@@ -131,17 +140,20 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
         # checkear ventana de tiempo
         try:
             assert start_index >= 0
-            assert end_index < database.shape[0]
+            assert end_index < system_ds.shape[0]
             
         except AssertionError:
             return None
         
-        # definir datos
-        T_X = database.index[start_index:date_index]
-        T_Y = database.index[date_index:end_index]
+        # definir datos de input
+        T_X = system_ds.index[start_index:date_index]
+        T_Y = system_ds.index[date_index:end_index]
         
-        X_data = database.iloc[start_index:end_index]
-        X, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
+        X = []
+        for ds in datasets:
+            X_data = ds.iloc[start_index:end_index]
+            X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
+            X.append(X_ds)
         
         # aplicar modelo
         Y_pred = model.predict(X)
@@ -149,14 +161,14 @@ def plot_forecasting_model(database, output_name, model, forecasting_date,
         
         # datos base
         start_index = max([0, start_index - time_margin])
-        end_index = min([database.shape[0], end_index + time_margin])
-        T_data = database.index[start_index:end_index]
-        Y_data = database[output_name].iloc[start_index:end_index]
+        end_index = min([system_ds.shape[0], end_index + time_margin])
+        T_data = system_ds.index[start_index:end_index]
+        Y_data = system_ds[output_name].iloc[start_index:end_index]
     
         # plotear
         axs[ix[0], ix[1]].plot(T_data, Y_data, ls='--', c='k')
         
-        axs[ix[0], ix[1]].plot(T_X, X[0,:,0], 'o-', c=[0.050383, 0.029803, 0.527975])
+        axs[ix[0], ix[1]].plot(T_X, X[0][0,:,0], 'o-', c=[0.050383, 0.029803, 0.527975])
         axs[ix[0], ix[1]].plot(T_Y, Y_pred,'o-', c=[0.798216, 0.280197, 0.469538])
         
         axs[ix[0], ix[1]].set_ylabel('PV Yield kW_avg')
@@ -211,7 +223,7 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
 
 #------------------------------------------------------------------------------
 # realizar evaluación respecto a clusters de días
-def cluster_evaluation(solar_database, pv_database, output_name, model, 
+def cluster_evaluation(solar_database, datasets, output_name, model, 
                        plot_clusters=True, random_state=0):
     """
     -> None
@@ -222,8 +234,9 @@ def cluster_evaluation(solar_database, pv_database, output_name, model,
     
     :param DataFrame solar_database:
         resgistro temporal de la radiación global en el día.
-    :param DataFrame pv_database:
-        registro temporal de generación en el día.
+    :param list(DataFrame) datasets:
+        lista que contiene los datasets con los atributos correspondientes a
+        los inputs del model de pronóstico.
     :param str output_name:
         nombre de la columna que contiene los datos del set Y.
     :param keras.model model:
@@ -285,7 +298,7 @@ def cluster_evaluation(solar_database, pv_database, output_name, model,
             # calcular mse de predicción en cada una de las horas
             for test_time in test_times:
                 try:
-                    Y_data, Y_pred = forecasting_test(pv_database, output_name, model, test_time)
+                    Y_data, Y_pred = forecasting_test(datasets, output_name, model, test_time)
                 except TypeError:
                     continue
                 
@@ -302,7 +315,7 @@ def cluster_evaluation(solar_database, pv_database, output_name, model,
         
         # plot cluster_sample
         plot_title = 'cluster '+ str(label)
-        plot_forecasting_model(pv_database, output_name, model, cluster_sample, title=plot_title)
+        plot_forecasting_model(datasets, output_name, model, cluster_sample, title=plot_title)
         
         # plot gráfico estimación
         plot_forecasting_accuracy(Y_data, Y_pred, title=plot_title, s=0.1)

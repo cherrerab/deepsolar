@@ -1,4 +1,30 @@
 # -*- coding: utf-8 -*-
+#%% replication setup ---------------------------------------------------------
+import numpy as np
+import random
+import os
+import tensorflow as tf
+from keras import backend as K
+
+seed_value = 2427
+
+# set `PYTHONHASHSEED` environment variable at a fixed value
+os.environ['PYTHONHASHSEED']=str(seed_value)
+
+# set `python` built-in pseudo-random generator at a fixed value
+random.seed(seed_value)
+
+# set `numpy` pseudo-random generator at a fixed value
+np.random.seed(seed_value)
+
+# set `tensorflow` pseudo-random generator at a fixed value
+tf.set_random_seed(seed_value)
+
+# configure a new global `tensorflow` session
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
+
 #%% load data -----------------------------------------------------------------
 import pandas as pd
 
@@ -52,8 +78,7 @@ import matplotlib.pyplot as plt
 
 
 # inicializar serie de encoding dimensions a probar
-encoding_dimensions = [512, 384, 256, 192, 128, 96, 64]
-encoding_dimensions = [512]
+encoding_dimensions = [4]
 
 #encoding_dimensions = [512]
 num_tests = len(encoding_dimensions)
@@ -109,7 +134,7 @@ for i, encoding_dim in enumerate(encoding_dimensions):
     early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=5)
     
     # training
-    model_history = autoencoder.fit(X_train, X_train, batch_size=128, epochs=25, 
+    model_history = autoencoder.fit(X_train, X_train, batch_size=128, epochs=100, 
                                     verbose=1, validation_data=(X_test, X_test))
 
     # training evaluation -----------------------------------------------------
@@ -123,14 +148,27 @@ print(autoencoder_results)
 #%% evaluation
 import matplotlib.pyplot as plt
 
-X_eval = np.reshape(X_test[100,:,:], (1, 128, 128, 1))
-X_pred = autoencoder.predict(X_eval)
+test_row, test_col = (5, 5)
+height, width = (128, 128)
+canvas = np.zeros((test_row*height, 2*test_col*width))
 
-X_pred = np.reshape(X_pred, (128, 128))
-X_eval = np.reshape(X_eval, (128, 128))
+for i in range(test_row):
+    for j in range(test_col):
+        sample = np.random.randint(X_test.shape[0])
+        X_sample = np.reshape(X_test[sample,:,:], (1, 128, 128, 1))
+        
+        min_sample = np.min(X_sample, axis=None)
+        max_sample = np.max(X_sample, axis=None)
+        X_sample = (X_sample - min_sample)/(max_sample - min_sample)
+        
+        X_pred = autoencoder.predict(X_sample)
+        min_pred = np.min(X_pred, axis=None)
+        max_pred = np.max(X_pred, axis=None)
+        
+        X_pred = (X_pred - min_pred)/(max_pred - min_pred)
+        
+        canvas[i*height:(i+1)*height, j:(j+1)*width] = np.reshape(X_sample, (height, width))
+        canvas[i*height:(i+1)*height, (j+1)*width:(j+2)*width] = np.reshape(X_pred, (height, width))
 
 plt.figure()
-plt.imshow(X_eval)
-
-plt.figure()
-plt.imshow(X_pred)
+plt.imshow(canvas)

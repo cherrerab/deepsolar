@@ -188,5 +188,37 @@ forecasting_model.compile(optimizer = 'adam', loss = 'mse', metrics = ['mae'])
 # entrenamos el modelo
 model_history = forecasting_model.fit([X_train, X_goes16_train], Y_train, batch_size = 128, epochs = 256, validation_data = ([X_test, X_goes16_test], Y_test))
 
+#%% load solar data -----------------------------------------------------------
+from solarpv.database import compact_database
 
+# cargar datos solarimetricos
+solar_1min_path = 'C:\\Cristian\\datasets\\solarimetric_1min_dataset.pkl'
+solar_1min_dataset = pd.read_pickle(solar_1min_path)
+solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:00', '07-09-2019 00:00')
+solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)
+solar_5min_dataset = compact_database(solar_1min_dataset, 5, use_average=True)
+
+#%% model evaluation ----------------------------------------------------------
+import numpy as np
+from solarpv.database import compact_database
+from solarpv.database import select_date_range
+from solarpv.database import radiance_to_radiation
+
+from solarpv.analytics import cluster_evaluation
+
+eval_data = dataset.copy()
+eval_goes16 = encoded_goes16_dataset.copy()
+
+for i in np.arange(std_scaler.shape[0]):
+    feature_min = std_scaler[i, 0]
+    feature_max = std_scaler[i, 1]
+    eval_data.iloc[:,i+1] = (eval_data.iloc[:,i+1] - feature_min)/(feature_max-feature_min)
+    
+for i in np.arange(std_scaler_goes16.shape[0]):
+    feature_min = std_scaler_goes16[i, 0]
+    feature_max = std_scaler_goes16[i, 1]
+    eval_goes16.iloc[:,i+1] = (eval_goes16.iloc[:,i+1] - feature_min)/(feature_max-feature_min)
+
+# evaluar modelo de forecasting
+cluster_metrics = cluster_evaluation(solar_5min_dataset, [eval_data, eval_goes16], 'Power', forecasting_model, plot_clusters=True, random_state=33)
 
