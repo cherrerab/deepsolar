@@ -88,6 +88,55 @@ def time_window_dataset(dataset, output_name, n_input, n_output, overlap,
     # retornar sets    
     return (X, Y)
 
+#------------------------------------------------------------------------------
+# generar database de secuencias temporales de imágenes
+def img_sequence_dataset(dataset, n_input, n_output, overlap):
+    """
+    -> np.array
+    
+    Crea dos datasets (X,Y) a partir del database, tomando ventanas de tiempo
+    adyacentes, el desfase entre estas ventanas puede ser definido mediante el
+    parámetro overlap.
+    
+    :param DataFrame dataset:
+        base de datos que contiene el registro temporal de imágenes a procesar.
+    :param int n_input:
+        largo de la ventana temporal de X.
+    :param int n_output:
+        largo de la ventana temporal de Y.
+    :param int overlap:
+        desfase entre las ventanas temporales.
+    
+    :returns:
+        np.array con la serie de datos de la forma
+        (n_secs, n_frames, n_height, n_width, 1). 
+    """
+    # obtener cantidad de datos en database
+    n_data = dataset.shape[0]
+        
+    # obtener tamaño de las imágenes
+    img_size = int( np.sqrt(dataset.shape[1] - 1) )
+    
+    # -------------------------------------------------------------------------
+    # obtener cantidad de ventanas temporales que se construiran
+    k = overlap
+    n_windows = floor( (n_data-n_input-n_output)/k ) + 1
+    
+    # inicializar dataset
+    X = np.zeros((n_windows, n_input, img_size, img_size, 1))
+    
+    # -------------------------------------------------------------------------
+    # procesar datasets
+    # por cada secuencia
+    for i in np.arange( n_windows ):
+        # por cada frame de la secuencia
+        for j in np.arange( k*i, k*i+n_input ):
+            frame = dataset.iloc[:, 1:].values
+            X[i, j, :, :, :] = np.reshape(frame, (img_size, img_size, 1))
+    
+    # retornar sets    
+    return X
+
 # -----------------------------------------------------------------------------
 # contruir set de input y output para entrenamiento, (X, Y)
 def setup_lstm_dataset(dataset, output_name, days_train, days_test,
@@ -131,9 +180,6 @@ def setup_lstm_dataset(dataset, output_name, days_train, days_test,
     date_format = '%d-%m-%Y %H:%M'
     current_date = datetime.strptime(dataset.at[0, 'Timestamp'], date_format)
     
-    # inicializar sets de datos
-    train_dataset = []
-    
     # datos de entrenamiento
     X_train_wd = []; Y_train_wd = []
     
@@ -168,9 +214,6 @@ def setup_lstm_dataset(dataset, output_name, days_train, days_test,
             train_data = pd.concat(train_i, axis=0)
             test_data = pd.concat(test_i, axis=0)
             
-            # agregar train_data a list
-            train_dataset.append(train_data)
-            
             # obtener ventanas temporales
             X_train_wd_i, Y_train_wd_i = time_window_dataset(train_data, output_name, n_input, n_output, overlap, avoid_columns)
             X_test_wd_i, Y_test_wd_i = time_window_dataset(test_data, output_name, n_input, n_output, overlap, avoid_columns)
@@ -202,6 +245,103 @@ def setup_lstm_dataset(dataset, output_name, days_train, days_test,
     
     # retornar
     return X_train, X_test, Y_train, Y_test
+
+# -----------------------------------------------------------------------------
+# contruir set de input para una ConvLSTM
+def setup_convlstm_dataset(dataset, days_train, days_test, n_input, n_output, overlap):
+    """
+    -> numpy.array, numpy.array, numpy.array, numpy.array
+    
+    construye el dataset de input X con la estructura necesaria para el
+    entrenamiento de un modelo ConvLSTM, donde cada dato corresponde a una
+    secuencia de n_input imágenes de un solo canal.
+    
+    :param pd.DataFrame dataset:
+        base de datos que contiene el registro temporal de imágenes.
+    :param int days_train:
+        periodo de días a agregar al set X_train en cada iteración.
+    :param int days_test:
+        periodo de días a agregar al set X_test en cada iteración.
+    :param int n_input:
+        largo de la ventana temporal de X.
+    :param int overlap:
+        desfase entre las ventanas temporales.
+        
+    :returns:
+        tupla de datasets (X_train, X_test)
+    """
+    
+    print('\n' + '='*80)
+    print('Spliting Training Data')
+    print('='*80 + '\n')
+    sleep(0.25)
+    # -------------------------------------------------------------------------
+    # inicialización
+    
+    # obtener fecha inicial del dataset e inicializar current_date
+    date_format = '%d-%m-%Y %H:%M'
+    current_date = datetime.strptime(dataset.at[0, 'Timestamp'], date_format)
+    
+    # datos de entrenamiento
+    X_train_wd = []
+    
+    # datos de validación
+    X_test_wd = []
+    
+    # -------------------------------------------------------------------------
+    # procesamiento
+    train_date = current_date + timedelta(days=days_train)
+    test_date = current_date + timedelta(days=days_train+days_test)
+    
+    # inicializar sub-sets
+    train_i = []; test_i = []
+    
+    bar = ProgressBar()
+    for i in bar( dataset.index ):
+        # obtener timestamp
+        timestamp = datetime.strptime(dataset.at[i, 'Timestamp'], date_format)
+        
+        # si debe ser agregado al X_train
+        if (timestamp < train_date):
+            train_i.append( dataset.iloc[[i]] )
+          
+        # si debe ser agregado al X_test
+        elif (train_date <= timestamp) and (timestamp < test_date):
+            test_i.append( dataset.iloc[[i]] )
+            
+        # si se entra en un nuevo periodo de split
+        elif (test_date <= timestamp):
+            # concatenar datos
+            train_data = pd.concat(train_i, axis=0)
+            test_data = pd.concat(test_i, axis=0)
+            
+            # obtener ventanas temporales
+            X_train_wd_i = img_sequence_dataset(train_data, n_input, n_output, overlap)
+            X_test_wd_i = img_sequence_dataset(test_data, n_input, n_output, overlap)
+        
+            # agregar ventanas a listas
+            X_train_wd.append(X_train_wd_i)
+            
+            X_test_wd.append(X_test_wd_i)
+            
+            # reinicializar sub-sets
+            train_i = []; test_i = []
+            
+            # re-establecer fechas
+            current_date = timestamp
+            train_date = current_date + timedelta(days=days_train)
+            test_date = current_date + timedelta(days=days_train+days_test)
+            
+    # -------------------------------------------------------------------------
+    # finalizacion
+    
+    # concatenar ventanas temporales
+    X_train = np.concatenate(X_train_wd, axis=0)
+    
+    X_test = np.concatenate(X_test_wd, axis=0)
+    
+    # retornar
+    return X_train, X_test
 
 # -----------------------------------------------------------------------------
 # normalizar sets de datos de entrenamiento y validación (X_train, X_test)
@@ -250,6 +390,48 @@ def lstm_standard_scaling(X_train, X_test):
         
         # normalizar atributo
         X_test[:,:,i] = (X_test[:,:,i] - feature_min)/(feature_max - feature_min)
+            
+    # retornar
+    return (X_train, X_test, std_scaler)
+
+# -----------------------------------------------------------------------------
+# normalizar sets de datos de entrenamiento y validación (X_train, X_test)
+def img_standard_scaling(X_train, X_test):
+    """
+    -> numpy.array, numpy.array
+    
+    normaliza los datos de X_train y X_test en base al máximo y mínimo en el
+    set X_train.
+    
+    :param numpy.array X_train:
+        set de datos de entrenamiento. se supone una estructura de una serie de
+        imágenes en escala de grises.
+        (n_time_windows, n_frames, img_height, img_width, 1).
+    :param numpy.array X_test:
+        set de datos de validación. se supone una estructura de una serie de
+        imágenes en escala de grises.
+        (n_time_windows, n_frames, img_height, img_width, 1).
+        
+    :returns:
+        los sets de datos X_train, X_test normalizados entre 0 y 1.
+    """
+    
+    # inicializar set de parámetros para normalizar
+    std_scaler = np.zeros((1, 2))
+    
+    # obtener el mínimo
+    feature_min = np.min(X_train, axis=None)
+    # obtener el máximo
+    feature_max = np.max(X_train, axis=None)
+    
+    # normalizar datasets
+    X_train = (X_train - feature_min)/(feature_max - feature_min)
+    X_test = (X_test - feature_min)/(feature_max - feature_min)
+        
+    # agregar parámetros al scaler
+    std_scaler[0, 0] = feature_min
+    std_scaler[0, 1] = feature_max
+    
             
     # retornar
     return (X_train, X_test, std_scaler)
