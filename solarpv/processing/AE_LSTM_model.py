@@ -9,7 +9,7 @@ from solarpv.database import radiance_to_radiation
 
 # -----------------------------------------------------------------------------
 # cargar datos de potencia-SMA
-sma_15min_path = 'C:\\Cristian\\003. SMA DATASET\\005. 15 MINUTES SYSTEM DATA2\\sma-15min-dataset.pkl'
+sma_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/system-power-15min-dataset.pkl'
 power_dataset = pd.read_pickle(sma_15min_path)
 power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -19,7 +19,7 @@ power_dataset = adjust_timestamps(power_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
-temp_15min_path = 'C:\\Cristian\\003. SMA DATASET\\004. TEMPERATURE DATA\\temperature-15min-dataset.pkl'
+temp_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/temperature-15min-dataset.pkl'
 temperature_dataset = pd.read_pickle(temp_15min_path)
 temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -29,7 +29,7 @@ temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
-solar_1min_path = 'C:\\Cristian\\001. SOLARIMETRIC DATA\\solarimetric-1min-dataset.pkl'
+solar_1min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/solarimetric-1min-dataset.pkl'
 solarimetric_dataset = pd.read_pickle(solar_1min_path)
 solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
 
@@ -39,7 +39,7 @@ solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
 
 # -----------------------------------------------------------------------------
 # cargar enocoded satellital data base de 30min
-encoded_goes16_path = ''
+encoded_goes16_path = '/media/hecate/Seagate Backup Plus Drive/datasets/goes16-96encoded-dataset.pkl'
 encoded_goes16_dataset = pd.read_pickle(encoded_goes16_path)
 encoded_goes16_dataset = select_date_range(encoded_goes16_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
 
@@ -131,6 +131,7 @@ from keras.layers import Dropout
 from keras.layers import Dense
 from keras.layers import Flatten
 from keras.layers import Concatenate
+from keras.optimizers import Adam
 
 
 from keras.utils import np_utils
@@ -143,38 +144,38 @@ input_data = Input( shape=(n_input, n_feature) )
 
 # añadimos las capas de procesamiento
 data_model = LSTM(units = 128, return_sequences = True)(input_data)
-data_model = LSTM(units = 64, return_sequences = True)(data_model)
-data_model = Dropout(rate = 0.1)(data_model)
+data_model = LSTM(units = 128, return_sequences = True)(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
+data_model = Dense(units = 128, activation = 'relu')(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
+
+data_model = Dense(units = 128, activation = 'relu')(data_model)
 data_model = Dense(units = 64, activation = 'relu')(data_model)
-data_model = Dropout(rate = 0.1)(data_model)
-
-data_model = Dense(units = 32, activation = 'relu')(data_model)
-data_model = Dense(units = 32, activation = 'relu')(data_model)
-data_model = Dropout(rate = 0.1)(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
 # añadimos las capas de salida
 data_model = Flatten()(data_model)
-output_data = Dense(units = 32*n_input, activation = 'relu')(data_model)
+output_data = Dense(units = 64, activation = 'relu')(data_model)
 
 # inicializamos la LSTM que trabaja con las imágenes satelitales codificadas --
 input_goes16 = Input( shape=(n_input, encoding_dim) )
 
 # añadimos las capas de procesamiento
-goes16_model = LSTM(units = 128, return_sequences = True)(input_data)
-goes16_model = LSTM(units = 64, return_sequences = True)(goes16_model)
-goes16_model = Dropout(rate = 0.1)(goes16_model)
+goes16_model = LSTM(units = 512, return_sequences = True)(input_data)
+goes16_model = LSTM(units = 512, return_sequences = True)(goes16_model)
+goes16_model = Dropout(rate = 0.2)(goes16_model)
 
-goes16_model = Dense(units = 64, activation = 'relu')(goes16_model)
-goes16_model = Dropout(rate = 0.1)(goes16_model)
+goes16_model = Dense(units = 512, activation = 'relu')(goes16_model)
+goes16_model = Dropout(rate = 0.2)(goes16_model)
 
-goes16_model = Dense(units = 32, activation = 'relu')(goes16_model)
-goes16_model = Dense(units = 32, activation = 'relu')(goes16_model)
-goes16_model = Dropout(rate = 0.1)(goes16_model)
+goes16_model = Dense(units = 512, activation = 'relu')(goes16_model)
+goes16_model = Dense(units = 256, activation = 'relu')(goes16_model)
+goes16_model = Dropout(rate = 0.2)(goes16_model)
 
 # añadimos las capas de salida
 goes16_model = Flatten()(goes16_model)
-output_goes16 = Dense(units = 32*n_input, activation = 'relu')(goes16_model)
+output_goes16 = Dense(units = 256, activation = 'relu')(goes16_model)
 
 # concatenamos los modelos para el modelo final
 concat_layer = Concatenate()([output_data, output_goes16])
@@ -183,16 +184,17 @@ output_layer = Dense(units = n_output, activation = 'linear')(concat_layer)
 forecasting_model = Model(inputs = [input_data, input_goes16], outputs = output_layer)
 
 # configuramos el modelo de optimizacion a utilizar
-forecasting_model.compile(optimizer = 'adam', loss = 'mse', metrics = ['mae'])
+optimizer_adam = Adam(lr=0.0001)
+forecasting_model.compile(optimizer = optimizer_adam, loss = 'mse', metrics = ['mae'])
 
 # entrenamos el modelo
-model_history = forecasting_model.fit([X_train, X_goes16_train], Y_train, batch_size = 128, epochs = 256, validation_data = ([X_test, X_goes16_test], Y_test))
+model_history = forecasting_model.fit([X_train, X_goes16_train], Y_train, batch_size = 256, epochs = 256, validation_data = ([X_test, X_goes16_test], Y_test))
 
 #%% load solar data -----------------------------------------------------------
 from solarpv.database import compact_database
 
 # cargar datos solarimetricos
-solar_1min_path = 'C:\\Cristian\\datasets\\solarimetric_1min_dataset.pkl'
+solar_1min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/solarimetric-1min-dataset.pkl'
 solar_1min_dataset = pd.read_pickle(solar_1min_path)
 solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:00', '07-09-2019 00:00')
 solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)

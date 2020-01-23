@@ -74,17 +74,19 @@ from keras.layers import UpSampling2D
 from keras.layers import Dropout
 from keras.layers import BatchNormalization
 
+from keras.optimizers import Adam
+
 import matplotlib.pyplot as plt
 
 
 # inicializar serie de encoding dimensions a probar
-encoding_dimensions = [4]
+encoding_dimensions = [32, 48, 64, 96, 128, 160, 192, 224, 256]
 
 #encoding_dimensions = [512]
 num_tests = len(encoding_dimensions)
 
 autoencoder_results = pd.DataFrame(index=np.arange(num_tests),
-                                   columns=['encoding_dim', 'MSE'])
+                                   columns=['encoding_dim', 'MSE', 'path'])
 
 for i, encoding_dim in enumerate(encoding_dimensions):
     
@@ -98,15 +100,17 @@ for i, encoding_dim in enumerate(encoding_dimensions):
     encoder = Conv2D( 96, (3, 3), activation='relu', padding='same' )(input_layer)
     encoder = MaxPooling2D( (2, 2) )(encoder)
     
-    encoder = Dropout(0.1)(encoder)
+    encoder = Dropout(0.2)(encoder)
     encoder = Conv2D( 64, (3, 3), activation='relu', padding='same' )(encoder)
     encoder = MaxPooling2D( (2, 2) )(encoder)
     
-    encoder = Dropout(0.1)(encoder)
+    encoder = Dropout(0.2)(encoder)
     encoder = Conv2D( 64, (5, 5), activation='relu', padding='same' )(encoder)
     
     # añadimos las capas del espacio latente ----------------------------------
+    encoder = Dropout(0.2)(encoder)
     encoder = Flatten()(encoder)
+    encoder = Dropout(0.2)(encoder)
     
     latent_space = Dense(encoding_dim, activation='softmax')(encoder)
     
@@ -130,7 +134,8 @@ for i, encoding_dim in enumerate(encoding_dimensions):
     autoencoder = Model(inputs = input_layer, outputs = decoded_layer)
     
     # compilamos el modelo incializando sus optimizadores
-    autoencoder.compile(optimizer = 'adam', loss = 'mse')
+    optimizer_adam = Adam(lr=0.0001)
+    autoencoder.compile(optimizer = optimizer_adam, loss = 'mse')
     early_stop = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=5)
     
     # training
@@ -138,37 +143,56 @@ for i, encoding_dim in enumerate(encoding_dimensions):
                                     verbose=1, validation_data=(X_test, X_test))
 
     # training evaluation -----------------------------------------------------
-    test_mse = autoencoder.evaluate(X_test, X_test, batch_size = 512)
+    test_mse = autoencoder.evaluate(X_test, X_test, batch_size = 128)
     
     autoencoder_results.at[i, 'encoding_dim'] = encoding_dim
     autoencoder_results.at[i, 'MSE'] = test_mse
+    
+    # guardar modelo
+    dir_path = '/home/hecate/Desktop/models/test-01'
+    file_name = 'AE_' + str(encoding_dim) + '.h5'
+    save_path = os.path.join(dir_path, file_name)
+    autoencoder_results.at[i, 'path'] = save_path
+    
+    autoencoder.save(save_path)
+    del autoencoder
+    del model_history
     
 print(autoencoder_results)
 
 #%% evaluation
 import matplotlib.pyplot as plt
+from keras.models import load_model
 
+# plot dependencia entre mse y encoding-dimension
+plt.plot(autoencoder_results['encoding_dim'], autoencoder_results['MSE'])
+
+# plot desempeño reconstrucción
 test_row, test_col = (5, 5)
 height, width = (128, 128)
-canvas = np.zeros((test_row*height, 2*test_col*width))
 
-for i in range(test_row):
-    for j in range(test_col):
-        sample = np.random.randint(X_test.shape[0])
-        X_sample = np.reshape(X_test[sample,:,:], (1, 128, 128, 1))
-        
-        min_sample = np.min(X_sample, axis=None)
-        max_sample = np.max(X_sample, axis=None)
-        X_sample = (X_sample - min_sample)/(max_sample - min_sample)
-        
-        X_pred = autoencoder.predict(X_sample)
-        min_pred = np.min(X_pred, axis=None)
-        max_pred = np.max(X_pred, axis=None)
-        
-        X_pred = (X_pred - min_pred)/(max_pred - min_pred)
-        
-        canvas[i*height:(i+1)*height, j:(j+1)*width] = np.reshape(X_sample, (height, width))
-        canvas[i*height:(i+1)*height, (j+1)*width:(j+2)*width] = np.reshape(X_pred, (height, width))
-
-plt.figure()
-plt.imshow(canvas)
+for ae_path in autoencoder_results['path']:
+    np.random.seed(seed_value)
+    
+    ae = load_model(ae_path)
+    canvas = np.zeros((test_row*height, 2*test_col*width))
+    
+    for j in range(test_row):
+        for i in range(test_col):
+            sample = np.random.randint(X_test.shape[0])
+            X_sample = np.reshape(X_test[sample,:,:], (1, 128, 128, 1))
+            X_pred = ae.predict(X_sample)
+            
+            min_sample = np.min(X_sample, axis=None)
+            max_sample = np.max(X_sample, axis=None)
+            X_sample = (X_sample - min_sample)/(max_sample - min_sample)
+            
+            min_pred = np.min(X_pred, axis=None)
+            max_pred = np.max(X_pred, axis=None)
+            X_pred = (X_pred - min_pred)/(max_pred - min_pred)
+            
+            canvas[i*height:(i+1)*height, 2*j*width:(2*j+1)*width] = np.reshape(X_sample, (height, width))
+            canvas[i*height:(i+1)*height, (2*j+1)*width:(2*j+2)*width] = np.reshape(X_pred, (height, width))
+    
+    plt.figure()
+    plt.imshow(canvas)
