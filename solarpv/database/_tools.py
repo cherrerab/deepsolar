@@ -297,9 +297,9 @@ def reshape_by_day(database, colname, initial_date, final_date):
           
     :returns: DataFrame de la base de datos procesada
     """
-    print('\n' + '='*80)
-    print('Reshaping Data')
-    print('='*80 + '\n')
+    print('\n' + '-'*80)
+    print('reshaping data time series')
+    print('-'*80 + '\n')
     sleep(0.25)
     
     # inicializar nueva base de datos -----------------------------------------
@@ -378,9 +378,9 @@ def compact_database(database, factor, use_average=False):
         permite decidir si sumar o ponderar los datos al comprimir el dataframe.
     """
     
-    print('\n' + '='*80)
-    print('Compacting Data Time Series')
-    print('='*80 + '\n')
+    print('\n' + '-'*80)
+    print('compacting data time series')
+    print('-'*80 + '\n')
     sleep(0.25)
     
     # -------------------------------------------------------------------------
@@ -505,9 +505,9 @@ def correct_daylight_saving(database, start_date, end_date, positive=True):
         DataFrame con los timestamps modificados. 
     """
     
-    print('\n' + '='*80)
-    print('Correcting Daylight Saving Time')
-    print('='*80 + '\n')
+    print('\n' + '-'*80)
+    print('correcting daylight saving time')
+    print('-'*80 + '\n')
     sleep(0.25)
     
     # parsing de fechas -------------------------------------------------------

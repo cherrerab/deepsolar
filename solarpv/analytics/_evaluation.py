@@ -17,13 +17,14 @@ import pandas as pd
 
 from solarpv import validate_date
 from solarpv.analytics import cluster_daily_radiation
-from solarpv.database import time_window_dataset
+from solarpv.database import time_window_dataset, img_sequence_dataset
 
 import numpy as np
 
 #------------------------------------------------------------------------------
 # evaluar modelo en cierto periodo de tiempo
-def forecasting_test(datasets, output_name, model, forecasting_date):
+def forecasting_test(datasets, output_name, model, forecasting_date,
+                     img_sequence=-1):
     """
     -> (np.array, np.array)
     
@@ -39,6 +40,8 @@ def forecasting_test(datasets, output_name, model, forecasting_date):
         modelo de forecasting a evaluar.
     :param str forecasting_date:
         fecha y hora en la que realizar el pronóstico %d-%m-%Y %H:%M.
+    :param int img_sequence:
+        indice del dataset que consiste en una sequencia de imagenes.
         
     :returns:
         tupla de np.arrays de la forma (Y_data, Y_pred)
@@ -72,9 +75,12 @@ def forecasting_test(datasets, output_name, model, forecasting_date):
     Y_data = np.reshape(Y_data, (n_output,-1))
     
     X = []
-    for ds in datasets:
+    for i, ds in enumerate(datasets):
         X_data = ds.iloc[start_index:end_index]
-        X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
+        if i == img_sequence:
+            X_ds, _ = img_sequence_dataset(X_data, n_input, n_output, n_input+n_output)
+        else:
+            X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
         X.append(X_ds)
     
     # aplicar modelo
@@ -87,7 +93,8 @@ def forecasting_test(datasets, output_name, model, forecasting_date):
 
 #------------------------------------------------------------------------------
 # obtener gráficos de predicción en cuatro días distintos al azar
-def plot_forecasting_model(datasets, output_name, model, forecasting_date, 
+def plot_forecasting_model(datasets, output_name, model, forecasting_date,
+                           img_sequence=-1,
                            hours=['10:00','13:00','16:00','19:00'],
                            time_margin=12, title=''):
     """
@@ -105,6 +112,8 @@ def plot_forecasting_model(datasets, output_name, model, forecasting_date,
         modelo de forecasting a evaluar.
     :param str forecasting_date:
         fecha y hora en la que realizar el pronóstico %d-%m-%Y.
+    :param int img_sequence:
+        indice del dataset que consiste en una sequencia de imagenes.
     :param list(str) hours:
         lista de 4 horas sobre las que aplicar el modelo.
     :param int time_margin:
@@ -150,9 +159,12 @@ def plot_forecasting_model(datasets, output_name, model, forecasting_date,
         T_Y = system_ds.index[date_index:end_index]
         
         X = []
-        for ds in datasets:
+        for i, ds in enumerate(datasets):
             X_data = ds.iloc[start_index:end_index]
-            X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
+            if i == img_sequence:
+                X_ds, _ = img_sequence_dataset(X_data, n_input, n_output, n_input+n_output)
+            else:
+                X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
             X.append(X_ds)
         
         # aplicar modelo
@@ -224,7 +236,7 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
 #------------------------------------------------------------------------------
 # realizar evaluación respecto a clusters de días
 def cluster_evaluation(solar_database, datasets, output_name, model, 
-                       plot_clusters=True, random_state=0):
+                       img_sequence=-1, plot_clusters=True, random_state=0):
     """
     -> None
     
@@ -298,7 +310,7 @@ def cluster_evaluation(solar_database, datasets, output_name, model,
             # calcular mse de predicción en cada una de las horas
             for test_time in test_times:
                 try:
-                    Y_data, Y_pred = forecasting_test(datasets, output_name, model, test_time)
+                    Y_data, Y_pred = forecasting_test(datasets, output_name, model, test_time, img_sequence=img_sequence)
                 except TypeError:
                     continue
                 
@@ -315,7 +327,7 @@ def cluster_evaluation(solar_database, datasets, output_name, model,
         
         # plot cluster_sample
         plot_title = 'cluster '+ str(label)
-        plot_forecasting_model(datasets, output_name, model, cluster_sample, title=plot_title)
+        plot_forecasting_model(datasets, output_name, model, cluster_sample, img_sequence=img_sequence, title=plot_title)
         
         # plot gráfico estimación
         plot_forecasting_accuracy(Y_data, Y_pred, title=plot_title, s=0.1)

@@ -25,6 +25,8 @@ import os
 from time import sleep
 
 import cv2
+from skimage.transform import resize
+
 
 from keras.models import Model
 
@@ -126,7 +128,7 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
                 break
         
         # checkar sincronización
-        print((db.at[i, u'Timestamp'], datetime.strftime(data_start, date_format)))
+        #print((db.at[i, u'Timestamp'], datetime.strftime(data_start, date_format)))
         
         # formatear data
         data = bound_goes16_data(data_path, bound_indexes)
@@ -271,6 +273,53 @@ def goes16_dataset_v2(dir_path, timestamps, size, lat=-33.45775, lon=-70.6646611
     db = db.reset_index()
     db.drop('index',axis=1, inplace=True)
   
+    return db
+
+# -----------------------------------------------------------------------------
+# resize imágenes satelitales
+def resize_goes16_dataset(database, dim, **kargs):
+    """
+    -> DataFrame
+    
+    Realiza un cv2.resize sobre cada una de las imágenes en el dataset.
+    
+    :param DataFrame dataset:
+        base de datos que contiene el registro temporal de imagenes satelitales.
+    :param tuple dim:
+        tamaño final de cada una de las imágenes en el dataset.
+        
+    :returns:
+        Dataframe con las imágenes con el nuevo tamaño.
+    """
+    
+    print('\n' + '-'*80)
+    print('resizing noaa-goes16 dataset')
+    print('-'*80 + '\n')
+    
+    # obtener tamaños
+    img_size = int( np.sqrt(database.shape[1] - 1) )
+    new_height, new_width = dim
+    
+    # inicializar nuevo dataframe
+    num_rows = int( new_height*new_width )
+    colnames = [u'Timestamp'] + list(np.arange(num_rows))
+    db = pd.DataFrame(0.0, index=database.index, columns=colnames)
+    db[u'Timestamp'] = db[u'Timestamp'].astype(str)
+    db[u'Timestamp'] = database[u'Timestamp']
+    
+    # por cada una de las imágenes contenidas en el dataset
+    bar = ProgressBar()
+    for i in bar( database.index ):
+        # reshape imagen
+        rad_data = np.nan_to_num( database.iloc[i, 1:].values )
+        rad_data = np.reshape(rad_data, (img_size, img_size, 1) )
+        
+        # resize
+        resized_data = resize( np.float32(rad_data) , dim, **kargs )
+        
+        # agregar al nuevo dataframe
+        db.at[i, 1:] = resized_data.reshape((1, new_height*new_width))[0]
+        
     return db
 
 # -----------------------------------------------------------------------------

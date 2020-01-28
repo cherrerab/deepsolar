@@ -130,8 +130,9 @@ def img_sequence_dataset(dataset, n_input, n_output, overlap):
     # por cada secuencia
     for i in np.arange( n_windows ):
         # por cada frame de la secuencia
-        for j in np.arange( k*i, k*i+n_input ):
-            frame = dataset.iloc[:, 1:].values
+        for j in np.arange( n_input ):
+            frame = dataset.iloc[k*i + j, 1:].values
+            frame = np.float32(frame)
             X[i, j, :, :, :] = np.reshape(frame, (img_size, img_size, 1))
     
     # retornar sets    
@@ -170,7 +171,7 @@ def setup_lstm_dataset(dataset, output_name, days_train, days_test,
     """
     
     print('\n' + '='*80)
-    print('Spliting Training Data')
+    print('spliting training data')
     print('='*80 + '\n')
     sleep(0.25)
     # -------------------------------------------------------------------------
@@ -272,7 +273,7 @@ def setup_convlstm_dataset(dataset, days_train, days_test, n_input, n_output, ov
     """
     
     print('\n' + '='*80)
-    print('Spliting Training Data')
+    print('spliting training data')
     print('='*80 + '\n')
     sleep(0.25)
     # -------------------------------------------------------------------------
@@ -416,6 +417,9 @@ def img_standard_scaling(X_train, X_test):
         los sets de datos X_train, X_test normalizados entre 0 y 1.
     """
     
+    X_train = np.nan_to_num(X_train)
+    X_test = np.nan_to_num(X_test)
+    
     # inicializar set de parámetros para normalizar
     std_scaler = np.zeros((1, 2))
     
@@ -425,6 +429,9 @@ def img_standard_scaling(X_train, X_test):
     feature_max = np.max(X_train, axis=None)
     
     # normalizar datasets
+    X_train = np.nan_to_num(X_train)
+    X_test = np.nan_to_num(X_test)
+    
     X_train = (X_train - feature_min)/(feature_max - feature_min)
     X_test = (X_test - feature_min)/(feature_max - feature_min)
         

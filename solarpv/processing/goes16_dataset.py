@@ -30,10 +30,10 @@ import os
 dir_paths = ['/media/hecate/Seagate Backup Plus Drive/goes16_ABI-L1b-RadF_M3_C04', '/media/hecate/Seagate Backup Plus Drive/goes16_ABI-L1b-RadF_M6_C04']
 
 # construir base de datos
-goes_16_ds = goes16_dataset(dir_paths, data_timestamps, 128)
+goes_16_ds = goes16_dataset(dir_paths, data_timestamps, 48)
 
 # guardar dataset
 save_dir = '/media/hecate/Seagate Backup Plus Drive/datasets'
-save_path = os.path.join(save_dir, 'goes16-30min-dataset.pkl')
+save_path = os.path.join(save_dir, 'goes16-30min-48px-dataset.pkl')
 goes_16_ds.to_pickle(save_path)
 

@@ -1,4 +1,30 @@
 # -*- coding: utf-8 -*-
+#%% replication setup ---------------------------------------------------------
+import numpy as np
+import random
+import os
+import tensorflow as tf
+from keras import backend as K
+
+seed_value = 2427
+
+# set `PYTHONHASHSEED` environment variable at a fixed value
+os.environ['PYTHONHASHSEED']=str(seed_value)
+
+# set `python` built-in pseudo-random generator at a fixed value
+random.seed(seed_value)
+
+# set `numpy` pseudo-random generator at a fixed value
+np.random.seed(seed_value)
+
+# set `tensorflow` pseudo-random generator at a fixed value
+tf.set_random_seed(seed_value)
+
+# configure a new global `tensorflow` session
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
+
 #%% load data -----------------------------------------------------------------
 import pandas as pd
 
@@ -35,7 +61,6 @@ solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00
 
 # compactar a base de 30min
 solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
-solarimetric_dataset = adjust_timestamps(solarimetric_dataset, -30*60)
 
 # -----------------------------------------------------------------------------
 # cargar enocoded satellital data base de 30min
@@ -143,20 +168,21 @@ import matplotlib.pyplot as plt
 input_data = Input( shape=(n_input, n_feature) )
 
 # añadimos las capas de procesamiento
-data_model = LSTM(units = 128, return_sequences = True)(input_data)
-data_model = LSTM(units = 128, return_sequences = True)(data_model)
+data_model = LSTM(units = 256, return_sequences = True)(input_data)
+data_model = LSTM(units = 256, return_sequences = True)(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
-data_model = Dense(units = 128, activation = 'relu')(data_model)
+data_model = Dense(units = 512, activation = 'relu')(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
-data_model = Dense(units = 128, activation = 'relu')(data_model)
-data_model = Dense(units = 64, activation = 'relu')(data_model)
+data_model = Dense(units = 256, activation = 'relu')(data_model)
+data_model = Dense(units = 256, activation = 'relu')(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
 # añadimos las capas de salida
 data_model = Flatten()(data_model)
-output_data = Dense(units = 64, activation = 'relu')(data_model)
+output_data = Dense(units = 256, activation = 'relu')(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
 # inicializamos la LSTM que trabaja con las imágenes satelitales codificadas --
 input_goes16 = Input( shape=(n_input, encoding_dim) )
@@ -176,6 +202,7 @@ goes16_model = Dropout(rate = 0.2)(goes16_model)
 # añadimos las capas de salida
 goes16_model = Flatten()(goes16_model)
 output_goes16 = Dense(units = 256, activation = 'relu')(goes16_model)
+output_goes16 = Dropout(rate = 0.2)(output_goes16)
 
 # concatenamos los modelos para el modelo final
 concat_layer = Concatenate()([output_data, output_goes16])

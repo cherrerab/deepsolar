@@ -1,4 +1,30 @@
 # -*- coding: utf-8 -*-
+#%% replication setup ---------------------------------------------------------
+import numpy as np
+import random
+import os
+import tensorflow as tf
+from keras import backend as K
+
+seed_value = 2427
+
+# set `PYTHONHASHSEED` environment variable at a fixed value
+os.environ['PYTHONHASHSEED']=str(seed_value)
+
+# set `python` built-in pseudo-random generator at a fixed value
+random.seed(seed_value)
+
+# set `numpy` pseudo-random generator at a fixed value
+np.random.seed(seed_value)
+
+# set `tensorflow` pseudo-random generator at a fixed value
+tf.set_random_seed(seed_value)
+
+# configure a new global `tensorflow` session
+session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+K.set_session(sess)
+
 #%% load data -----------------------------------------------------------------
 import pandas as pd
 
@@ -9,7 +35,7 @@ from solarpv.database import radiance_to_radiation
 
 # -----------------------------------------------------------------------------
 # cargar datos de potencia-SMA
-sma_15min_path = 'C:\\Cristian\\datasets\\sma_system_15min_dataset.pkl'
+sma_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/system-power-15min-dataset.pkl'
 power_dataset = pd.read_pickle(sma_15min_path)
 power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -19,7 +45,7 @@ power_dataset = adjust_timestamps(power_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
-temp_15min_path = 'C:\\Cristian\\datasets\\sma_temperature_15min_dataset.pkl'
+temp_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/temperature-15min-dataset.pkl'
 temperature_dataset = pd.read_pickle(temp_15min_path)
 temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -29,7 +55,7 @@ temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
-solar_1min_path = 'C:\\Cristian\\datasets\\solarimetric_1min_dataset.pkl'
+solar_1min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/solarimetric-1min-dataset.pkl'
 solarimetric_dataset = pd.read_pickle(solar_1min_path)
 solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
 
@@ -65,6 +91,7 @@ plot_2D_radiation_data(solarimetric_dataset, unit='°C', colname='Temperature', 
 plot_performance_ratio(power_dataset, solarimetric_dataset, '27-08-2018', '07-09-2019')
 
 #%% setup dataset -------------------------------------------------------------
+from datetime import datetime, timedelta
 from solarpv.database import setup_lstm_dataset
 from solarpv.database import lstm_standard_scaling
 
@@ -128,49 +155,51 @@ Y_test = (Y_test - feature_min)/(feature_max-feature_min)
 
 #%% train lstm model ----------------------------------------------------------
 import keras
+from keras.models import Model
+from keras.layers import Input
 from keras.layers import LSTM
-from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import Dropout
-from keras.utils import np_utils
-from keras.utils import plot_model
 from keras.layers import Flatten
+from keras.optimizers import Adam
 
 import matplotlib.pyplot as plt
 
-# inicializamos la ANN
-model = Sequential()
+# inicializamos la LSTM que trabaja con los datos -----------------------------
+input_data = Input( shape=(n_input, n_feature) )
 
-# creamos la primera capa de input
-model.add(LSTM(units = 128, return_sequences = True, input_shape = (n_input, n_feature)))
-keras.layers.Dropout(rate = 0.2)
+# añadimos las capas de procesamiento
+data_model = LSTM(units = 1024, return_sequences = True)(input_data)
+data_model = LSTM(units = 1024, return_sequences = True)(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
-# creamos la segunda capa LSTM (con DropOut)
-model.add(LSTM(units = 64, return_sequences = True))
-keras.layers.Dropout(rate = 0.2)
+data_model = Dense(units = 1024, activation = 'relu')(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
-# creamos la tercera y cuarta capa (con DropOut)
-model.add(Dense(units = 64, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-model.add(Dense(units = 32, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
-model.add(Dense(units = 32, activation = 'relu'))
-keras.layers.Dropout(rate = 0.2)
+data_model = Dense(units = 512, activation = 'relu')(data_model)
+data_model = Dense(units = 512, activation = 'relu')(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
-# creamos la capa de salida
-model.add(Flatten())
-model.add(Dense(units = n_output, activation = 'linear'))
+# añadimos las capas de salida
+data_model = Flatten()(data_model)
+output_data = Dense(units = 512, activation = 'relu')(data_model)
+data_model = Dropout(rate = 0.2)(data_model)
 
-# configuramos el modelo de optimizacion a utilizar
-model.compile(optimizer = 'adam', loss = 'mse', metrics = ['mae'])
+output_layer = Dense(units = n_output, activation = 'linear')(output_data)
+
+# compilamos el modelo
+forecasting_model = Model(inputs = input_data, outputs = output_layer)
+
+optimizer_adam = Adam(lr=0.0001)
+forecasting_model.compile(optimizer = optimizer_adam, loss = 'mse', metrics = ['mae'])
 
 # entrenamos el modelo
-model_history = model.fit(X_train, Y_train, batch_size = 128, epochs = 256, validation_data = (X_test, Y_test))
+model_history = forecasting_model.fit(X_train, Y_train, batch_size = 256, epochs = 256, validation_data = (X_test, Y_test))
 
 #%% training evaluation -------------------------------------------------------
 
 # visualizamos la evolucion de la funcion de perdida
-test_mse, test_mae = model.evaluate(X_test, Y_test, batch_size = 30)
+test_mse, test_mae = forecasting_model.evaluate(X_test, Y_test, batch_size = 30)
 
 plt.figure()
 plt.plot(model_history.history['loss'], c=(0.050383, 0.029803, 0.527975, 1.0))
