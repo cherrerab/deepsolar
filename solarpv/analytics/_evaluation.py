@@ -15,21 +15,24 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from solarpv import validate_date
+from solarpv._tools import validate_date, get_timestep, get_date_index
 from solarpv.analytics import cluster_daily_radiation
+from solarpv.analytics import mean_squared_error, mean_absolute_error, mean_bias_error
+from solarpv.analytics import skew_error, kurtosis_error, forecast_skill
+
 from solarpv.database import time_window_dataset, img_sequence_dataset
 
 import numpy as np
 
 #------------------------------------------------------------------------------
 # evaluar modelo en cierto periodo de tiempo
-def forecasting_test(datasets, output_name, model, forecasting_date,
-                     img_sequence=-1):
+def forecast_pred(datasets, output_name, model, forecast_date,
+                  img_sequence=None):
     """
     -> (np.array, np.array)
     
     realiza una predicción de generación (forecasting) a partir del
-    forecasting_date especificado, utilizando el modelo entregado.
+    forecast_date especificado, utilizando el modelo entregado.
     
     :param list(DataFrame) datasets:
         lista que contiene los datasets con los atributos correspondientes a
@@ -39,20 +42,20 @@ def forecasting_test(datasets, output_name, model, forecasting_date,
     :param keras.model model:
         modelo de forecasting a evaluar.
     :param str forecasting_date:
-        fecha y hora en la que realizar el pronóstico %d-%m-%Y %H:%M.
+        fecha y hora en la que realizar el pronóstico %d-%m-%Y %H:%M (UTC).
     :param int img_sequence:
         indice del dataset que consiste en una sequencia de imagenes.
         
     :returns:
-        tupla de np.arrays de la forma (Y_data, Y_pred)
+        tupla de np.arrays de la forma (Y_true, Y_pred)
     """
     
     # obtener dataset con datos de potencias PV (Y)
     system_ds = datasets[0]
     
     # obtener index correspondiente a forecasting_date
-    forecasting_date = validate_date(forecasting_date)
-    date_index = np.where( system_ds['Timestamp']==forecasting_date)[0][0]
+    forecast_date = validate_date(forecast_date)
+    date_index = get_date_index( system_ds['Timestamp'], forecast_date)
     
     # obtener ventana de tiempo
     n_input = int(model.input.shape[1])
@@ -71,8 +74,8 @@ def forecasting_test(datasets, output_name, model, forecasting_date,
         return None
     
     # definir datos
-    Y_data = system_ds[output_name].iloc[date_index:end_index].values
-    Y_data = np.reshape(Y_data, (n_output,-1))
+    Y_true = system_ds[output_name].iloc[date_index:end_index].values
+    Y_true = np.reshape(Y_true, (n_output,-1))
     
     X = []
     for i, ds in enumerate(datasets):
@@ -88,15 +91,15 @@ def forecasting_test(datasets, output_name, model, forecasting_date,
     Y_pred = np.reshape(Y_pred, (n_output,-1))
     
     # retornar
-    assert Y_data.shape[0] == Y_pred.shape[0]
-    return (Y_data, Y_pred)
+    assert Y_true.shape[0] == Y_pred.shape[0]
+    return (Y_true, Y_pred)
 
 #------------------------------------------------------------------------------
 # obtener gráficos de predicción en cuatro días distintos al azar
-def plot_forecasting_model(datasets, output_name, model, forecasting_date,
-                           img_sequence=-1,
-                           hours=['10:00','13:00','16:00','19:00'],
-                           time_margin=12, title=''):
+def plot_forecast_pred(datasets, output_name, model, forecast_date,
+                       img_sequence=-1,
+                       hours=['10:00','13:00','16:00','19:00'],
+                       time_margin=12, title=''):
     """
     -> None
     
@@ -134,11 +137,11 @@ def plot_forecasting_model(datasets, output_name, model, forecasting_date,
     n_output = int(model.output.shape[1])
     
     # obtener timestamps de forecasting
-    test_times = [forecasting_date + ' ' + h for h in hours]
+    pred_times = [forecast_date + ' ' + h for h in hours]
     
     plot_axs = [(0, 0), (0, 1), (1, 0), (1, 1)]
     
-    for test_time, ix in zip(test_times, plot_axs):
+    for test_time, ix in zip(pred_times, plot_axs):
         # obtener index correspondiente a forecasting_date
         date_index = np.where( system_ds['Timestamp']==test_time )[0][0]
         
@@ -175,10 +178,10 @@ def plot_forecasting_model(datasets, output_name, model, forecasting_date,
         start_index = max([0, start_index - time_margin])
         end_index = min([system_ds.shape[0], end_index + time_margin])
         T_data = system_ds.index[start_index:end_index]
-        Y_data = system_ds[output_name].iloc[start_index:end_index]
+        Y_true = system_ds[output_name].iloc[start_index:end_index]
     
         # plotear
-        axs[ix[0], ix[1]].plot(T_data, Y_data, ls='--', c='k')
+        axs[ix[0], ix[1]].plot(T_data, Y_true, ls='--', c='k')
         
         axs[ix[0], ix[1]].plot(T_X, X[0][0,:,0], 'o-', c=[0.050383, 0.029803, 0.527975])
         axs[ix[0], ix[1]].plot(T_Y, Y_pred,'o-', c=[0.798216, 0.280197, 0.469538])
@@ -193,15 +196,15 @@ def plot_forecasting_model(datasets, output_name, model, forecasting_date,
 
 #------------------------------------------------------------------------------
 # obtener plot de estimación Y_test vs Y_pred
-def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
+def plot_forecast_accuracy(Y_true, Y_pred, title='', **kargs):
     """
     -> None
     
-    grafica la correlación entre Y_data e Y_pred (este último correspondiente
+    grafica la correlación entre Y_true e Y_pred (este último correspondiente
     al forecasting realizado por el modelo) con el fin de visualizar el 
     desempeño del modelo.
     
-    :param DataFrame Y_data:
+    :param DataFrame Y_true:
         set de datos reales con los cuales comparar el forecasting.
     :param DataFrame Y_pred:
         set de datos obtenidos con el modelo.
@@ -213,14 +216,14 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
     """
     
     # reordenar datos
-    Y_data = np.reshape(np.array(Y_data), (-1, 1))
+    Y_true = np.reshape(np.array(Y_true), (-1, 1))
     Y_pred = np.reshape(np.array(Y_pred), (-1, 1))
     
     # inicializar plot
     plt.figure()
     
-    # plotear Y_data vs Y_pred
-    plt.scatter(Y_data, Y_pred, c=[0.050383, 0.029803, 0.527975],**kargs)
+    # plotear Y_true vs Y_pred
+    plt.scatter(Y_true, Y_pred, c=[0.050383, 0.029803, 0.527975],**kargs)
     
     # plotear linea 1:1
     plt.plot([0, 1], [0, 1], c='k')
@@ -230,9 +233,141 @@ def plot_forecasting_accuracy(Y_data, Y_pred, title='', **kargs):
     plt.ylim([0, 1])
     
     plt.title(title)
-    plt.xlabel('Y_data')
+    plt.xlabel('Y_true')
     plt.ylabel('Y_pred')
+    
+    
+#------------------------------------------------------------------------------
+# evaluar forecast_model
+def forecast_model_evaluation(datasets, output_name, model, data_leap,
+                              cluster_labels=[], img_sequence=None,
+                              plot_results=True, random_state=0,
+                              save_path=None):
+    """
+    -> DataFrame
+    
+    retorna métricas de evaluación del modelo de forecast entregado en base a
+    su desempeño en el dataset entregado.
+    
+    :param list(DataFrame) datasets:
+        lista que contiene los datasets con los atributos correspondientes a
+        los inputs del model de pronóstico.
+    :param str output_name:
+        nombre de la columna que contiene los datos del set Y.
+    :param keras.model model:
+        modelo de forecasting a evaluar.
+    :param int data_leap:
+        define el intervalo de tiempo entre cada pronóstico a realizar.
+    :param list or array_like cluster_labels:
+        contiene la etiqueta que identifica el cluster da cada día en el dataset.
+    :param int img_sequence: (default None)
+        indice del dataset que consiste en una sequencia de imagenes.
+    :param bool plot_results:
+        determina si se muestran los gráficos de la evaluación.
+    :param int random_state:
+        permite definir el random_state en la evaluación.
+    :param str save_path:
+        ubicación del directorio en donde guardar los resultados.
+        
+    :returns:
+        DataFrame
+    """
+    
+    random.seed(random_state)
 
+    # obtener lista de días
+    system_ds = datasets[0]
+    
+    date_format = '%d-%m-%Y %H:%M'
+    timestamps = system_ds['Timestamp'].values
+    
+    timestep = get_timestep(system_ds['Timestamp'], date_format)
+    
+    initial_date = datetime.strptime(timestamps[0], date_format)
+    final_date = datetime.strptime(timestamps[-1], date_format)
+    
+    dates = pd.date_range(initial_date, final_date, freq='1D')
+    dates = dates.strftime('%d-%m-%Y')
+    
+    # -------------------------------------------------------------------------
+    # evaluar modelo
+    print('\n' + '-'*80)
+    print('cluster evaluation summary')
+    print('-'*80 + '\n')
+    
+    n_output = int(model.output.shape[1])
+    
+    # checkear cluster_labels
+    if  not cluster_labels:
+        cluster_labels = np.zeros([1, dates.size]).flatten()
+        num_labels = np.max(cluster_labels) + 1
+        
+    num_labels = np.max(cluster_labels) + 1
+    
+    # inicializar cluster_metrics
+    metrics = ['mbe', 'mae', 'rmse', 'fs', 'std', 'skw', 'kts']
+    eval_metrics = pd.DataFrame(index=np.arange(num_labels), columns=metrics)
+    
+    # para cada etiqueta resultante del clustering
+    for label in np.arange(num_labels):
+        # obtener fechas correspondientes a la etiqueta
+        cluster_dates = dates[cluster_labels==label]
+        
+        # escoger una fecha de muestra al azar
+        cluster_sample = random.choice( list(cluster_dates) )
+        
+        # inicializar datos cluster
+        cluster_data = []
+        cluster_pred = []
+        cluster_pers = []
+        
+        # por cada una de las fechas del cluster
+        for date in cluster_dates:
+            # obtener forecasting_times de testing
+            timeleap = timestep*data_leap
+            
+            initial_hour = datetime.strptime(date, date_format)
+            hours = [initial_hour + timedelta(seconds=timeleap*i) for i in range(24*3600/timestep)]
+            pred_times = [datetime.strftime(h, date_format) for h in hours]
+            
+            # calcular predicción en cada una de las horas
+            for pred_time in pred_times:
+                try:
+                    # prediccion del modelo
+                    Y_true, Y_pred = forecast_pred(datasets, output_name, model, pred_time, img_sequence=img_sequence)
+                    
+                    # prediccion del persistence model
+                    Y_pers = beauchef_persistence_forecast(system_ds, pred_time, n_output)
+                    
+                except TypeError:
+                    continue
+                
+                # agregar datos a cluster data
+                cluster_data.append(Y_true)
+                cluster_pred.append(Y_pred)
+                cluster_pers.append(Y_pers)
+        
+        # calcular metricas del cluster
+        Y_true = np.concatenate(cluster_data).flatten()
+        Y_pred = np.concatenate(cluster_pred).flatten()
+        Y_pers = np.concatenate(cluster_pers).flatten()
+        
+        eval_metrics.at[label, 'mbe'] = mean_bias_error(Y_true, Y_pred)
+        eval_metrics.at[label, 'mae'] = mean_absolute_error(Y_true, Y_pred)
+        eval_metrics.at[label, 'rmse'] = np.sqrt(mean_squared_error(Y_true, Y_pred))
+        eval_metrics.at[label, 'fs'] = forecast_skill(Y_true, Y_pred, Y_pers)
+        eval_metrics.at[label, 'skw'] = skew_error(Y_true, Y_pred)
+        eval_metrics.at[label, 'kts'] = kurtosis_error(Y_true, Y_pred)
+        
+        # plot cluster_sample
+        plot_title = 'cluster '+ str(label)
+        plot_forecast_pred(datasets, output_name, model, cluster_sample, img_sequence=img_sequence, title=plot_title)
+        
+        # plot gráfico estimación
+        plot_forecast_accuracy(Y_true, Y_pred, title=plot_title, s=0.1)
+      
+    return eval_metrics
+    
 #------------------------------------------------------------------------------
 # realizar evaluación respecto a clusters de días
 def cluster_evaluation(solar_database, datasets, output_name, model, 
@@ -275,9 +410,9 @@ def cluster_evaluation(solar_database, datasets, output_name, model,
     
     # -------------------------------------------------------------------------
     # evaluar modelo en los clusters
-    print('\n' + '='*80)
-    print('Cluster Evaluation Summary')
-    print('='*80 + '\n')
+    print('\n' + '-'*80)
+    print('cluster evaluation summary')
+    print('-'*80 + '\n')
     
     random.seed(random_state)
     
@@ -305,32 +440,32 @@ def cluster_evaluation(solar_database, datasets, output_name, model,
             # obtener forecasting_times de testing
             initial_hour = datetime.strptime('00:00','%H:%M')
             hours = [initial_hour + timedelta(seconds=3600*i) for i in range(24)]
-            test_times = [date + ' ' + datetime.strftime(h,'%H:%M') for h in hours]
+            pred_times = [date + ' ' + datetime.strftime(h,'%H:%M') for h in hours]
             
             # calcular mse de predicción en cada una de las horas
-            for test_time in test_times:
+            for pred_time in pred_times:
                 try:
-                    Y_data, Y_pred = forecasting_test(datasets, output_name, model, test_time, img_sequence=img_sequence)
+                    Y_true, Y_pred = forecast_pred(datasets, output_name, model, pred_time, img_sequence=img_sequence)
                 except TypeError:
                     continue
                 
                 # agregar datos a cluster data
-                cluster_data.append(Y_data)
+                cluster_data.append(Y_true)
                 cluster_pred.append(Y_pred)
         
         # calcular rmse y mae del cluster
-        Y_data = np.concatenate(cluster_data)
+        Y_true = np.concatenate(cluster_data)
         Y_pred = np.concatenate(cluster_pred)
         
-        cluster_metrics.at[label, 'RMSE'] = np.sqrt(np.mean(np.power(Y_data - Y_pred, 2), axis = 0)[0])
-        cluster_metrics.at[label, 'MAE'] = np.mean(np.abs(Y_data - Y_pred))
+        cluster_metrics.at[label, 'RMSE'] = np.sqrt(np.mean(np.power(Y_true - Y_pred, 2), axis = 0)[0])
+        cluster_metrics.at[label, 'MAE'] = np.mean(np.abs(Y_true - Y_pred))
         
         # plot cluster_sample
         plot_title = 'cluster '+ str(label)
-        plot_forecasting_model(datasets, output_name, model, cluster_sample, img_sequence=img_sequence, title=plot_title)
+        plot_forecast_pred(datasets, output_name, model, cluster_sample, img_sequence=img_sequence, title=plot_title)
         
         # plot gráfico estimación
-        plot_forecasting_accuracy(Y_data, Y_pred, title=plot_title, s=0.1)
+        plot_forecast_accuracy(Y_true, Y_pred, title=plot_title, s=0.1)
     
     print(cluster_metrics)    
     return cluster_metrics

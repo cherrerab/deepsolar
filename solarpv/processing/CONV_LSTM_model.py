@@ -80,12 +80,17 @@ from datetime import datetime
 import pandas as pd
 
 # inicilizar dataset
-colnames = ['Timestamp', 'Power', 'Module Temperature', 'External Temperature', 'Global', 'Diffuse', 'Direct', 'n_day', 'min_day']
+colnames = ['Timestamp', 'Power', 'Inversor_1', 'Inversor_2', 'Inversor_3', 'Inversor_4', 'Module Temperature', 'External Temperature', 'Global', 'Diffuse', 'Direct', 'n_day', 'min_day']
 dataset = pd.DataFrame(0.0, index=power_dataset.index, columns=colnames)
 
 # asignar columna de timestamp y potencia
 dataset['Timestamp'] = power_dataset['Timestamp']
+
 dataset['Power'] = power_dataset['Sistema']
+dataset['Inversor_1'] = power_dataset['SB 2500HF-30 997']
+dataset['Inversor_2'] = power_dataset['SMC 5000A 493']
+dataset['Inversor_3'] = power_dataset['SB 2500HF-30 273']
+dataset['Inversor_4'] = power_dataset['SMC 5000A 434']
 
 dataset['Module Temperature'] = temperature_dataset['Module']
 dataset['External Temperature'] = solarimetric_dataset['Temperature']
@@ -111,7 +116,7 @@ for i in dataset.index:
     # asignar al dataset
     dataset.at[i, 'n_day'] = n_day
     dataset.at[i, 'min_day'] = min_day
-
+    
 # ----------------------------------------------------------------------------- 
 # setup time windows
 n_input = 6

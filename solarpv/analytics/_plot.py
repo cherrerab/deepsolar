@@ -15,13 +15,13 @@ import numpy as np
 from datetime import datetime, timedelta
 
 from solarpv.database import reshape_by_day
-from solarpv._tools import ext_irradiance, ext_irradiation
+from solarpv._tools import ext_irradiance, ext_irradiation, get_timestep
 
 from solarpv import (validate_date, get_date_index)
 
 #------------------------------------------------------------------------------
 # obtener gráfico fracción difusa vs claridad
-def plot_fraccion_difusa_claridad(database, lat=-33.45775, lon=70.66466111):
+def plot_fraccion_difusa_claridad(database, **kargs):
     """
     -> None
     
@@ -44,7 +44,7 @@ def plot_fraccion_difusa_claridad(database, lat=-33.45775, lon=70.66466111):
     
     # obtener claridad
     timestamp = database['Timestamp'].values
-    ext_rad = [ext_irradiance(t, lat, lon) for t in timestamp]
+    ext_rad = [ext_irradiance(t, **kargs) for t in timestamp]
     claridad = np.divide( global_rad, np.asarray(ext_rad) )
     
     
@@ -130,8 +130,7 @@ def plot_2D_radiation_data(database, unit='', **kargs):
 #------------------------------------------------------------------------------
 # obtener gráfico 1D de radiación en el tiempo
 def plot_1D_radiation_data(database, colname, start_date, stop_date, 
-                         extraRad=True, lat=-33.45775, lon=70.66466111,
-                         multiply_factor = 1):
+                           extraRad=True, scale_factor=1.0, **kargs):
     """
     -> None
     Plotea el gráfico temporal 1D de la radiación en el tiempo. Donde el eje X
@@ -147,10 +146,8 @@ def plot_1D_radiation_data(database, colname, start_date, stop_date,
         fecha en que termina el plot.
     :param bool extraRad:
         si incluir en el plot la radiación extraterreste.
-    :param float lat:
-        latitud del punto geográfico.
-    :param float lon:
-        longitud del punto geográfico en grados oeste [0,360).
+    :param float scale_factor:
+        si se desea escalar los datos en algún factor.
         
     :return:
         None
@@ -176,16 +173,13 @@ def plot_1D_radiation_data(database, colname, start_date, stop_date,
     X = range( len(timestamps) )
     
     plt.figure()
-    plt.plot(X, Y*multiply_factor, c='k', ls='-', lw=0.8, label='Data')
+    plt.plot(X, Y*scale_factor, c='k', ls='-', lw=0.8, label='Data')
     
     # añadir readiación extraterrestre ----------------------------------------
     if extraRad:
-        timestep = (datetime.strptime(timestamps[1], date_format)
-                    - datetime.strptime(timestamps[0], date_format))
+        secs = get_timestep(timestamps, date_format)
         
-        secs = timestep.seconds
-        
-        ext_rad = [ext_irradiation(t, secs, lat, lon) for t in timestamps]
+        ext_rad = [ext_irradiation(t, secs, **kargs) for t in timestamps]
         plt.plot(X, ext_rad, c='k', ls='--', lw=0.8, label='Extraterrestrial')   
     
     # colocar etiquetas en el gráfico -----------------------------------------
@@ -200,8 +194,7 @@ def plot_1D_radiation_data(database, colname, start_date, stop_date,
     
 #------------------------------------------------------------------------------
 # obtener gráfico de performance ratio de la planta fotovoltaica
-def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
-                           lat=-33.45775, lon=70.66466111):
+def plot_performance_ratio(db_pv, db_solar, start_date, stop_date, **kargs):
     """
     -> None
      Plotea el gráfico de performance ratio vs claridad a partir de la base de
@@ -211,10 +204,6 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
         base de datos que contiene el registro de 'Potencia' fotovoltaica.
     :param DataFrame db_solar:
         base de datos que contiene el registro de irradiancia 'Global'.
-    :param float lat:
-        latitud del punto geográfico.
-    :param float lon:
-        longitud del punto geográfico en grados oeste [0,360).
         
     :return:
         None
@@ -227,14 +216,11 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
     
     # verificar que los timesteps se correspondan
     date_format = '%d-%m-%Y %H:%M'
+    timestep_pv = get_timestep(db_pv[u'Timestamp'], date_format)
     
-    timestep_pv = (datetime.strptime(db_pv.at[1, u'Timestamp'], date_format)
-                  -datetime.strptime(db_pv.at[0, u'Timestamp'], date_format) )
+    timestep_solar = get_timestep(db_solar[u'Timestamp'], date_format)
     
-    timestep_solar = (datetime.strptime(db_solar.at[1, u'Timestamp'], date_format)
-                     -datetime.strptime(db_solar.at[0, u'Timestamp'], date_format) )
-    
-    assert timestep_solar.seconds==timestep_pv.seconds
+    assert timestep_solar==timestep_pv
     
     # -------------------------------------------------------------------------
     # obtener indices
@@ -286,7 +272,7 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date,
         
     # obtener claridad
     timestamp = db_solar['Timestamp'].values[ solar_index[0]:solar_index[1] ]
-    ext_rad = [ext_irradiance(t, lat, lon) for t in timestamp]
+    ext_rad = [ext_irradiance(t, **kargs) for t in timestamp]
     
     claridad = []
     for i in range( len(pv_power) ):
@@ -346,13 +332,11 @@ def plot_power_irradiance(db_pv, db_solar, start_date, stop_date):
     # verificar que los timesteps se correspondan
     date_format = '%d-%m-%Y %H:%M'
     
-    timestep_pv = (datetime.strptime(db_pv.at[1, u'Timestamp'], date_format)
-                  -datetime.strptime(db_pv.at[0, u'Timestamp'], date_format) )
+    timestep_pv = get_timestep(db_pv[u'Timestamp'], date_format)
     
-    timestep_solar = (datetime.strptime(db_solar.at[1, u'Timestamp'], date_format)
-                     -datetime.strptime(db_solar.at[0, u'Timestamp'], date_format) )
+    timestep_solar = get_timestep(db_solar[u'Timestamp'], date_format)
     
-    assert timestep_solar.seconds==timestep_pv.seconds
+    assert timestep_solar==timestep_pv
     
     # -------------------------------------------------------------------------
     # obtener indices
@@ -414,7 +398,68 @@ def plot_power_irradiance(db_pv, db_solar, start_date, stop_date):
     
     return None
     
+#------------------------------------------------------------------------------
+# obtener secuencia de imágenes satelitales
+def plot_goes16_secuence(dataset, start_date, stop_date, cols=5):
+    """
+    -> None
     
+    Plotea la secuencia de imágenes satelitales durante el periodo especificado.
+    
+    :param DataFrame dataset:
+        base de datos que contiene el registro temporal de imagenes satelitales.
+    :param DataFrame db_solar:
+        base de datos que contiene el registro de irradiancia 'Global'.
+    :param str start_date:
+        fecha desde la cual empezar la secuencia.
+    :param str stop_date:
+        fecha en que termina la secuencia.
+        
+    :return:
+        None
+    """
+    
+    # obtener limites del plot ------------------------------------------------
+    tmstmp = database['Timestamp'].values
+    date_format = '%d-%m-%Y %H:%M'
+    
+    start_date = datetime.strptime( validate_date(start_date), date_format )
+    stop_date = datetime.strptime( validate_date(stop_date), date_format )
+    
+    start_index = get_date_index(tmstmp, start_date, nearest=True)
+    stop_index = get_date_index(tmstmp, stop_date, nearest=True)
+    
+    if stop_index <= start_index:
+        print('InputError: las fechas ingresadas no permiten generar un plot.')
+        return None
+    
+    # plotear imágenes --------------------------------------------------------
+    # obtener tamaño de las imágenes
+    img_size = int( np.sqrt(dataset.shape[1] - 1) )
+    
+    # obtener cantidad de imágenes a plotear
+    img_num = stop_index - start_index
+    rows = np.ceil( img_num/cols )
+    
+    # inicializar canvas
+    canvas = np.zeros((img_size*rows, img_size*cols))
+    
+    # agregar imágenes
+    for i in range(rows):
+        for j in range(cols):
+            index = start_index + cols*i + j
+            # si la imagen es parte de la secuencia
+            if index < stop_index:
+                frame = np.float32( dataset.iloc[index, 1:].values )
+                frame = np.reshape(frame, (img_size, img_size))
+                
+                # agregar frame al canvas
+                canvas[i*img_size:(i+1)*img_size, j*img_size:(j+1)*img_size] = frame
+    
+    # plotear
+    plt.imshow(canvas)
+    
+    return None
     
     
     

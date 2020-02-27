@@ -6,6 +6,7 @@ Cristian Herrera
 
 v1.0 - update, Aug 01 2019
 """
+import numpy as np
 
 from datetime import datetime, timedelta
 from math import (pi, cos, sin, tan, acos)
@@ -52,8 +53,8 @@ def validate_date(date_text):
     return datetime.strftime(date, '%d-%m-%Y %H:%M')
 
 #------------------------------------------------------------------------------
-# validar formato de fecha
-def get_date_index(timestamps, search_date, nearest=False):
+# obtener fecha 
+def get_date_index(timestamps, search_date, nearest=None):
     """
     -> int
     
@@ -64,34 +65,83 @@ def get_date_index(timestamps, search_date, nearest=False):
         serie que contiene la lista de fechas (se asume ordenada).
     :param str search_date:
         fecha que se desea buscar en timestamps.
-    :param bool nearest:
-        si entregar el indice de la fecha más cercana en caso de que no se
-        encuentre 'search_date' dentro de 'timestamp'
+    :param bool nearest ('lower' or 'upper'):
+        si entregar el indice de la fecha anterior más cercana en caso de que
+        no se encuentre 'search_date' dentro de 'timestamp'
         
         
     :returns:
         index en que 'search_date' se encuentra en 'timestamps'.
     """
     
+    try:
+        timestamps = timestamps.values
+    except AttributeError:
+        timestamps
+        
+    # busqueda exacta
     date_format = '%d-%m-%Y %H:%M'
-    search_date = datetime.strptime( validate_date(search_date), date_format )
+    search_date = validate_date(search_date)
     
-    if nearest:
+    time_index = np.where( timestamps==search_date)[0]
+    if time_index.any():
+        return time_index[0]
+    
+    # busqueda inexacta
+    if nearest != None:
+        search_date = datetime.strptime( search_date, date_format )
+    
         first_date = datetime.strptime(timestamps[0], date_format)
         last_date = datetime.strptime(timestamps[-1], date_format)
         
+        # revisar limites
         if search_date < first_date:
             return 0
         elif search_date > last_date:
             return len(timestamps)-1
+        
+        # revisar lista
+        for i in range( len(timestamps) ):
+            idate = datetime.strptime(timestamps[i], date_format)
+            
+            # más cercano
+            if (idate >= search_date):
+                time_index = i if nearest=='upper' else i-1
+                return time_index
     
-    for i in range( len(timestamps) ):
-        idate = datetime.strptime(timestamps[i], date_format)
-        if (idate >= search_date):
-            return i
-    
+    # en caso de no encontrar el timestamp
     return None
-       
+
+# obtener timestamp de un registro temporal
+def get_timestep(timestamps, date_format):
+    """
+    -> int
+    
+    Retorna la cantidad de segundos que hay en cada intervalo de la serie
+    temporal.
+    
+    :param array-like timestamps:
+        serie temporal de timestamps.
+    :param str date_format:
+        formato de los timestamps en la serie.
+        
+    :returns:
+        timestep en segundos.
+    """
+    
+    # checkear tipo de serie
+    try:
+        timestamps = timestamps.values
+    except AttributeError:
+        timestamps
+     
+    # obtener timestep
+    timestep = (  datetime.strptime(timestamps[1], date_format)
+                - datetime.strptime(timestamps[0], date_format))
+    timestep = timestep.seconds
+    
+    return float(timestep)
+    
 #------------------------------------------------------------------------------
 # obtener irradiación extraterrestre
 def ext_irradiance(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
@@ -178,7 +228,8 @@ def ext_irradiance(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
 
 #------------------------------------------------------------------------------
 # obtener irradiación extraterrestre
-def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
+def ext_irradiation(timestamp, secs, step='backward',
+                    lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     """
     -> float
     
@@ -190,6 +241,8 @@ def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=
         string que contiene la hora y fecha del comienzo del periodo (UTC).
     :param int secs:
         cantidad de segundos que dura el periodo a calcular.
+    :param str step:
+        si el intervalo comienza (forward) o termina (backward) en el timestamp.
     :param float lat:
         latitud del punto geográfico.
     :param float lon:
@@ -233,9 +286,14 @@ def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=
         - 0.04089*sin(2*B))
     
     solar_min = min_day + 4*(0 - lon*(180.0/pi)) + E
-    solar_hour_1 = solar_min/60.0
     
-    solar_hour_2 = (solar_min + secs/60.0)/60.0
+    if step=='forward':
+        solar_hour_1 = solar_min/60.0
+        solar_hour_2 = (solar_min + secs/60.0)/60.0
+    elif step=='backward':
+        solar_hour_1 = (solar_min - secs/60.0)/60.0
+        solar_hour_2 = solar_min/60.0
+        
     
     # ángulo solar (w)
     w1 = 15*(solar_hour_1 - 12.0)*(pi/180.0)
@@ -267,7 +325,7 @@ def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=
                  + cos(delta)*sin(lat)*sin(Bs)*cos(Zs)*(sin(w2) - sin(w1))*factor
                  - cos(delta)*sin(Bs)*sin(Zs)*(cos(w2) - cos(w1))*factor)
     
-    # retornar irradiancia solar, Wh/m2
+    # retornar irradicion solar, Wh/m2
     if (cos_theta < 0.0):
         return 0.0
     
@@ -275,5 +333,85 @@ def ext_irradiation(timestamp, secs, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=
         return 0.0
     
     return G_on*cos_theta/3600.0
+
+#------------------------------------------------------------------------------
+def solar_incidence(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
+    """
+    -> float
     
+    Calcula el cos(theta) correspondiente al ángulo de incidencia del sol sobre
+    la superficie.
     
+    :param str timestamp:
+        string que contiene la hora y fecha a utilizar (UTC).
+    :param float lat:
+        latitud del punto geográfico.
+    :param float lon:
+        longitud del punto geográfico en grados oeste [0,360).
+    :param float Bs: (default, 0.0)
+        inclinación de la superficie.
+        ángulo de inclinación respecto al plano horizontal de la superficie 
+        sobre la cual calcular la irradiancia (grados).
+    :param float Zs: (default, 0.0)
+        azimut de la superficie.
+        ángulo entre la proyección de la normal de la superficie en el plano
+        horizontal y la dirección hacia el ecuador (grados).
+        
+    :returns:
+        float del valor del coseno del ángule de incidencia.
+        * si el valor es negativo, se retorna 0.
+    """
+    
+    # corregir latitud y longitud
+    lat = lat*(pi/180.0)
+    lon = lon*(pi/180.0)
+    
+    # tiempo
+    date_format = '%d-%m-%Y %H:%M'
+    date = datetime.strptime(timestamp, date_format)
+    date_tt = date.timetuple()
+    
+    # dia del año
+    min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+    n_day = date_tt.tm_yday + min_day/(24*60.0)
+    
+    # solar time - Spencer (1971)
+    B = (n_day - 1)*(2*pi/365.0)
+    E = 229.2*(0.000075 + 0.001868*cos(B) - 0.032077*sin(B) - 0.014615*cos(2*B)
+        - 0.04089*sin(2*B))
+    
+    solar_min = min_day + 4*(0 - lon*(180.0/pi)) + E
+    solar_hour = solar_min/60.0
+    
+    # ángulo solar (w)
+    w = 15*(solar_hour - 12.0)*(pi/180.0)
+    
+    # declinacion - Spencer (1971)
+    delta = (0.006918 - 0.399912*cos(B) + 0.070257*sin(B) - 0.006758*cos(2*B)
+            + 0.000907*sin(2*B) - 0.002697*cos(3*B) + 0.00148*sin(3*B))
+    
+#    # ángulo de alba (w_ss)
+#    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
+#    
+#    # si el sol no ha salido la irradiancia es cero
+#    if abs(w) >= abs(w_ss):
+#        return 0.0
+    
+    # corregir angulos de la superfice
+    Bs = Bs*pi/180
+    Zs = Zs*pi/180
+    
+    # ángulo de incidencia (theta) sobre la superficie
+    # ángulo entre la radiación del sol y la normal a la superficie
+    
+    cos_theta = (sin(delta)*sin(lat)*cos(Bs)
+                 - sin(delta)*cos(lat)*sin(Bs)*cos(Zs)
+                 + cos(delta)*cos(lat)*cos(Bs)*cos(w)
+                 + cos(delta)*sin(lat)*sin(Bs)*cos(Zs)*cos(w)
+                 + cos(delta)*sin(Bs)*sin(Zs)*sin(w))
+    
+    # retornar irradiancia solar, W/m2
+    if cos_theta < 0.0:
+        return 0.0
+    
+    return cos_theta

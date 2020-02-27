@@ -21,7 +21,7 @@ from sklearn import preprocessing
 from datetime import (datetime, timedelta)
 
 from solarpv.database import reshape_by_day
-from solarpv._tools import ext_irradiation
+from solarpv._tools import validate_date, get_date_index, ext_irradiation, get_timestep
 
 #------------------------------------------------------------------------------
 # obtener índice de claridad diario
@@ -45,9 +45,7 @@ def day_clear_sky_index(day_data, **kargs):
     timestamps = [date + ' ' + h for h in day_data.index]
     
     # calcular radiación extraterrestre
-    timestep = (  datetime.strptime(timestamps[1], date_format)
-                - datetime.strptime(timestamps[0], date_format)  )
-    secs = timestep.seconds
+    secs = get_timestep(timestamps, date_format)
     
     ext_rad = [ext_irradiation(t, secs, **kargs) for t in timestamps]
     ext_sum = sum(ext_rad)
@@ -83,10 +81,69 @@ def day_cloudless_index(day_global, day_diffuse):
     
     return (1.0 - diffuse_sum/global_sum)
 
+# -----------------------------------------------------------------------------
+# clearsky variability
+def clearsky_variability(database, timestamp, timesteps, side='backward', **kargs):
+    """
+    -> float
+    
+    Calcula la desviacion estandar del clearsky index dentro del periodo
+    especificado.
+    
+    :param DataFrame database:
+        base de datos que contenga el resgistro temporal de la radiación.
+    :param str timestamp:
+        string que contiene la hora y fecha del comienzo del periodo (UTC).
+    :param int timesteps:
+        cantidad de puntos/timesteps a considerar en el periodo.
+    :param str side: ('backward' or 'forward')
+        define si el timestamp corresponde al comienzo o al fin del periodo.
+        
+    :returns:
+        (float) desviacion estandar del clearsky index en el periodo.   
+    """
+    
+    # -------------------------------------------------------------------------
+    # obtener indice del timestamp en la base de datos
+    timestamp = validate_date(timestamp)
+    idx = get_date_index( database['Timestamp'], timestamp )
+    
+    assert (side=='backward') or (side=='forward')
+    
+    # definir indices del periodo
+    if side=='backward':
+        data_index = np.arange( (idx - timesteps), (idx + 1) )
+    else:
+        data_index = np.arange( idx, (idx + timesteps + 1) )
+        
+    # obtener radiacion global en el periodo
+    timestamps = database.loc[data_index, 'Timestamp'].values
+    global_rad = database.loc[data_index, 'Global'].values
+    
+    # -------------------------------------------------------------------------
+    # calcular clearsky index dentro del periodo
+    date_format = '%d-%m-%Y %H:%M'
+    secs = get_timestep(database['Timestamp'], date_format)
+    
+    # calcular radiacion extraterrestre
+    ext_rad = [ext_irradiation(t, secs, **kargs) for t in timestamps]
+    # calcular clearsky index
+    clearsky = np.divide( global_rad, ext_rad )
+    
+    # obtener desviacion estandar
+    v = np.std( np.diff(clearsky) )
+    
+    return v
+        
+        
+        
+    
+    
 
 #------------------------------------------------------------------------------
 # realizar clustering sobre los datos díarios de radiación
-def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=True):
+def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=True,
+                            **kargs):
     """
     -> list
     
@@ -137,14 +194,16 @@ def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=Tru
         diffuse_data = dd[date]
         
         # indice de claridad diario
-        clear_sky = day_clear_sky_index(global_data)
+        clear_sky = day_clear_sky_index(global_data, **kargs)
         
         # indice de nubosidad (1- fracción difusa)
         cloudless = day_cloudless_index(global_data, diffuse_data)
         
         # suavidad del perfil
+        print(len(global_data))
         smoothed_data =  np.convolve(global_data, gaussian, mode='same')
         smoothed_data = smoothed_data/np.sum( gaussian )
+        print(len(smoothed_data))
         
         smooth_error = np.mean( np.power(global_data - smoothed_data, 2) )
         smooth_error = np.sqrt(smooth_error)
@@ -218,7 +277,7 @@ def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=Tru
     
 #------------------------------------------------------------------------------
 # obtener los n días más soleados en el dataset
-def get_n_sunniest_days(database, n_days=5):
+def get_n_sunniest_days(database, n_days=5, **kargs):
     """
     -> list
     
@@ -261,7 +320,7 @@ def get_n_sunniest_days(database, n_days=5):
         diffuse_data = dd[date]
         
         # indice de claridad diario
-        clear_sky = day_clear_sky_index(global_data)
+        clear_sky = day_clear_sky_index(global_data, **kargs)
         
         # indice de nubosidad (1- fracción difusa)
         cloudless = day_cloudless_index(global_data, diffuse_data)

@@ -41,7 +41,7 @@ power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019
 
 # compactar a base de 30min
 power_dataset = compact_database(power_dataset, 2, use_average=True)
-power_dataset = adjust_timestamps(power_dataset, -15*60)
+power_dataset = adjust_timestamps(power_dataset, 15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos de temperatura-SMA
@@ -51,16 +51,17 @@ temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15',
 
 # compactar a base de 30min
 temperature_dataset = compact_database(temperature_dataset, 2, use_average=True)
-temperature_dataset = adjust_timestamps(temperature_dataset, -15*60)
+temperature_dataset = adjust_timestamps(temperature_dataset, 15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
 solar_1min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/solarimetric-1min-dataset.pkl'
 solarimetric_dataset = pd.read_pickle(solar_1min_path)
-solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:00', '07-09-2019 00:00')
+solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:01', '07-09-2019 00:00')
 
 # compactar a base de 30min
 solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
+solarimetric_dataset = adjust_timestamps(solarimetric_dataset, 29*60)
 
 #%% analysis ------------------------------------------------------------------
 from datetime import datetime, timedelta
@@ -216,9 +217,11 @@ from solarpv.database import compact_database
 # cargar datos solarimetricos
 solar_1min_path = 'C:\\Cristian\\datasets\\solarimetric_1min_dataset.pkl'
 solar_1min_dataset = pd.read_pickle(solar_1min_path)
-solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:00', '07-09-2019 00:00')
+solar_1min_dataset = select_date_range(solar_1min_dataset, '28-08-2018 00:01', '07-09-2019 00:00')
 solar_1min_dataset = radiance_to_radiation(solar_1min_dataset)
+
 solar_5min_dataset = compact_database(solar_1min_dataset, 5, use_average=True)
+solar_5min_dataset = adjust_timestamps(solar_5min_dataset, 4*60)
 
 #%% model evaluation ----------------------------------------------------------
 import numpy as np

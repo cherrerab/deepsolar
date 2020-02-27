@@ -12,7 +12,7 @@ pd.options.mode.chained_assignment = None
 
 from datetime import datetime, timedelta
 
-from solarpv import (validate_date, get_date_index, ext_irradiance)
+from solarpv._tools import (validate_date, get_date_index, get_timestep, ext_irradiance)
 
 import numpy as np
 
@@ -318,10 +318,7 @@ def reshape_by_day(database, colname, initial_date, final_date):
     
     
     # filas
-    timestep = ( datetime.strptime(database.at[1,'Timestamp'], date_format) 
-                -datetime.strptime(database.at[0,'Timestamp'], date_format) )
-    
-    timestep = timestep.seconds
+    timestep = get_timestep(database['Timestamp'], date_format)
     num_hours = int( 24*(3600/timestep) )
     
     initial_hour = datetime.strptime('00:00','%H:%M')
@@ -386,9 +383,7 @@ def compact_database(database, factor, use_average=False):
     # -------------------------------------------------------------------------
     # obtener base de tiempo de dataset
     date_format = '%d-%m-%Y %H:%M'
-    timestep = (  datetime.strptime(database.at[1, u'Timestamp'], date_format)
-                - datetime.strptime(database.at[0, u'Timestamp'], date_format))
-    timestep = timestep.seconds
+    timestep = get_timestep(database['Timestamp'], date_format)
     
     # -------------------------------------------------------------------------
     # compactar dataframe
@@ -472,9 +467,8 @@ def align_radiation(database, clear_sky_days, **kargs ):
         diff.append( ext_index - rad_index )
     
     # calular ajuste en segundos ----------------------------------------------
-    timestep = (datetime.strptime(timestamps[1], date_format)
-                - datetime.strptime(timestamps[0], date_format))
-    delay = round(sum(diff)/len(diff))*timestep.seconds
+    timestep = get_timestep(database['Timestamp'], date_format)
+    delay = round(sum(diff)/len(diff))*timestep
     print(delay)
     # modificar timestamps
     new_timestamps = [datetime.strftime( datetime.strptime(t, date_format)
@@ -519,9 +513,7 @@ def correct_daylight_saving(database, start_date, end_date, positive=True):
     db = database.copy()
     
     # obtner timestep
-    timestep = (  datetime.strptime(database.at[1, u'Timestamp'], date_format)
-                - datetime.strptime(database.at[0, u'Timestamp'], date_format))
-    timestep = timestep.seconds
+    timestep = get_timestep(database['Timestamp'], date_format)
     
     delta = (3600.0/timestep)
     delta = delta if positive else -delta

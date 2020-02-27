@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from solarpv.noaa._api import get_key_times
 from solarpv.noaa._tools import get_bound_indexes, bound_goes16_data
-from solarpv import validate_date
+from solarpv._tools import validate_date, get_timestep
 
 from progressbar import ProgressBar
 
@@ -59,9 +59,9 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
           
     :returns: DataFrame de la base de datos
     """
-    print('\n' + '='*80)
-    print('Processing NOAA-GOES16 Data')
-    print('='*80 + '\n')
+    print('\n' + '-'*80)
+    print('processing noaa-goes16 data')
+    print('-'*80 + '\n')
     
     # obtener lista de archivos netCDF4 a procesar ----------------------------
     nc_list = []
@@ -83,15 +83,17 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
             
             # obtener timestamp
             start_date, end_date = get_key_times(file_name)
-            start_date = datetime.strptime(start_date, '%d-%m-%Y %H:%M:%S')
             
-            nc_list.append( (start_date, os.path.join(path, f)) )
+            start_date = datetime.strptime(start_date, '%d-%m-%Y %H:%M:%S')
+            end_date = datetime.strptime(end_date, '%d-%m-%Y %H:%M:%S')
+            
+            nc_list.append( (start_date, end_date, os.path.join(path, f)) )
         
     # ordenar
     nc_list.sort()
     
     # inicializar dataset -----------------------------------------------------
-    colnames = [u'Timestamp'] + list(np.arange(size*size))
+    colnames = [u'Timestamp', 'Start Time', 'End Time'] + list(np.arange(size*size))
     num_data = len(timestamps)
     
     db = pd.DataFrame(0.0, index=np.arange(num_data), columns=colnames)
@@ -119,21 +121,22 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
         # obtener imagen satelital correspondiente
         for j in range( len(nc_list) ):
             # obtener timestamp de inicio del scaneo
-            data_start, data_path = nc_list[j]
+            data_start, _, data_path = nc_list[j]
             
             # si la imagen fue tomada después del timestamp de  interés
             if timestamp < data_start:
                 # la imagen correspondiente es la tomada anteriormente
-                data_start, data_path = nc_list[j-1]
+                data_start, data_end, data_path = nc_list[j-1]
                 break
         
-        # checkar sincronización
-        #print((db.at[i, u'Timestamp'], datetime.strftime(data_start, date_format)))
+        # agregar timestamps de scaneo
+        db.at[i, 'Start Time'] = datetime.strftime(data_start, date_format)
+        db.at[i, 'End Time'] = datetime.strftime(data_end, date_format)
         
         # formatear data
         data = bound_goes16_data(data_path, bound_indexes)
 
-        db.at[i, 1:] = data.reshape( (1,-1) )[0]
+        db.at[i, 3:] = data.reshape( (1,-1) )[0]
         
     if not(fix_timestamps):
         return db
@@ -142,10 +145,7 @@ def goes16_dataset(dir_path, timestamps, size, lat=-33.45775, lon=-70.66466111,
     # añadir timestamps faltantes
     
     # obtener timestep del dataset
-    timestep = (  datetime.strptime(db.at[1,u'Timestamp'], date_format)
-                - datetime.strptime(db.at[0,u'Timestamp'], date_format) )
-    timestep = timestep.seconds
-    
+    timestep = get_timestep(db['Timestamp'], date_format)
     
     time_freq = str(timestep) + 'S'
     first_date = datetime.strptime( db['Timestamp'].iloc[0], date_format)

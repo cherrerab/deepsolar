@@ -11,7 +11,7 @@ import xarray as xr
 import netCDF4
 import numpy as np
 
-from solarpv import validate_date
+from solarpv._tools import validate_date
 from solarpv.noaa._api import get_key_times
 
 from datetime import datetime
