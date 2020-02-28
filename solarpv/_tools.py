@@ -174,6 +174,10 @@ def ext_irradiance(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     lat = lat*(pi/180.0)
     lon = lon*(pi/180.0)
     
+    # corregir angulos de la superfice
+    Bs = Bs*pi/180
+    Zs = Zs*pi/180
+    
     # tiempo
     date_format = '%d-%m-%Y %H:%M'
     date = datetime.strptime(timestamp, date_format)
@@ -204,12 +208,12 @@ def ext_irradiance(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     delta = (0.006918 - 0.399912*cos(B) + 0.070257*sin(B) - 0.006758*cos(2*B)
             + 0.000907*sin(2*B) - 0.002697*cos(3*B) + 0.00148*sin(3*B))
     
-#    # ángulo de alba (w_ss)
-#    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
-#    
-#    # si el sol no ha salido la irradiancia es cero
-#    if abs(w) >= abs(w_ss):
-#        return 0.0
+    # ángulo de alba (w_ss)
+    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
+    
+    # si el sol no ha salido la irradiancia es cero
+    if abs(w) >= abs(w_ss):
+        return 0.0
     
     # ángulo de incidencia (theta) sobre la superficie
     # ángulo entre la radiación del sol y la normal a la superficie
@@ -264,6 +268,10 @@ def ext_irradiation(timestamp, secs, step='backward',
     lat = lat*(pi/180.0)
     lon = lon*(pi/180.0)
     
+    # corregir angulos de la superfice
+    Bs = Bs*pi/180
+    Zs = Zs*pi/180
+    
     # tiempo
     date_format = '%d-%m-%Y %H:%M'
     date = datetime.strptime(timestamp, date_format)
@@ -303,15 +311,15 @@ def ext_irradiation(timestamp, secs, step='backward',
     delta = (0.006918 - 0.399912*cos(B) + 0.070257*sin(B) - 0.006758*cos(2*B)
             + 0.000907*sin(2*B) - 0.002697*cos(3*B) + 0.00148*sin(3*B))
     
-#    # ángulo de alba (w_ss)
-#    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
-#    
-#    # ajustar periodo a limites donde existe sol
-#    if abs(w1) >= abs(w_ss):
-#        w1 = abs(w_ss) if w1 >= abs(w_ss) else -abs(w_ss)
-#        
-#    if abs(w2) > abs(w_ss):
-#        w2 = abs(w_ss) if w2 >= abs(w_ss) else -abs(w_ss)
+    # ángulo de alba (w_ss)
+    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
+    
+    # ajustar periodo a limites donde existe sol
+    if abs(w1) >= abs(w_ss):
+        w1 = abs(w_ss) if w1 >= abs(w_ss) else -abs(w_ss)
+        
+    if abs(w2) > abs(w_ss):
+        w2 = abs(w_ss) if w2 >= abs(w_ss) else -abs(w_ss)
     
     
     factor = 43200.0/pi
@@ -366,6 +374,10 @@ def solar_incidence(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     lat = lat*(pi/180.0)
     lon = lon*(pi/180.0)
     
+    # corregir angulos de la superfice
+    Bs = Bs*pi/180
+    Zs = Zs*pi/180
+    
     # tiempo
     date_format = '%d-%m-%Y %H:%M'
     date = datetime.strptime(timestamp, date_format)
@@ -390,16 +402,12 @@ def solar_incidence(timestamp, lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0):
     delta = (0.006918 - 0.399912*cos(B) + 0.070257*sin(B) - 0.006758*cos(2*B)
             + 0.000907*sin(2*B) - 0.002697*cos(3*B) + 0.00148*sin(3*B))
     
-#    # ángulo de alba (w_ss)
-#    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
-#    
-#    # si el sol no ha salido la irradiancia es cero
-#    if abs(w) >= abs(w_ss):
-#        return 0.0
+    # ángulo de alba (w_ss)
+    w_ss = -abs( acos(-tan(lat)*tan(delta)) )
     
-    # corregir angulos de la superfice
-    Bs = Bs*pi/180
-    Zs = Zs*pi/180
+    # si el sol no ha salido la irradiancia es cero
+    if abs(w) >= abs(w_ss):
+        return 0.0
     
     # ángulo de incidencia (theta) sobre la superficie
     # ángulo entre la radiación del sol y la normal a la superficie

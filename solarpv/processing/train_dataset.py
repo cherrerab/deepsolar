@@ -30,17 +30,21 @@ sma_temp_30min_dataset = adjust_timestamps(sma_temp_30min_dataset, 15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
-sol_radI_01min_path = 'C:\\Cristian\\datasets_pkl\\solarimetric\\sol_radI_01min_s20170703_e20190907.pkl'
-sol_radI_01min_dataset = pd.read_pickle(sol_radI_01min_path)
-sol_radI_01min_dataset = select_date_range(sol_radI_01min_dataset, '27-08-2018 04:01', '07-09-2019 00:00')
+sol_radG_01min_path = 'C:\\Cristian\\datasets_pkl\\solarimetric\\sol_radG_01min_s20170703_e20190907.pkl'
+sol_radG_01min_dataset = pd.read_pickle(sol_radG_01min_path)
+sol_radG_01min_dataset = select_date_range(sol_radG_01min_dataset, '27-08-2018 04:01', '07-09-2019 00:00')
 
 # compactar a base de 15min
-sol_radI_15min_dataset = compact_database(sol_radI_01min_dataset, 15, use_average=True)
-sol_radI_15min_dataset = adjust_timestamps(sol_radI_15min_dataset, 14*60)
+sol_radG_15min_dataset = compact_database(sol_radG_01min_dataset, 15, use_average=True)
+sol_radG_15min_dataset = adjust_timestamps(sol_radG_15min_dataset, 14*60)
+
+sol_radI_15min_dataset = radiance_to_radiation(sol_radG_15min_dataset)
 
 # compactar a base de 30min
-sol_radI_30min_dataset = compact_database(sol_radI_01min_dataset, 30, use_average=True)
-sol_radI_30min_dataset = adjust_timestamps(sol_radI_30min_dataset, 29*60)
+sol_radG_30min_dataset = compact_database(sol_radG_01min_dataset, 30, use_average=True)
+sol_radG_30min_dataset = adjust_timestamps(sol_radG_30min_dataset, 29*60)
+
+sol_radI_30min_dataset = radiance_to_radiation(sol_radG_30min_dataset)
 
 #%% setup 15min dataset
 from datetime import datetime

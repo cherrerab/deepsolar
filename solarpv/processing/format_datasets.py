@@ -14,6 +14,7 @@ data_path = os.path.join(dir_path, data_file)
 
 # generar dataset
 sol_radG_01min_dataset = solarimetric_dataset(data_path, 'CR1000_Beauchef_min_Corregido', 4, ['A','C','D','E','F'], keep_negatives=False)
+
 sol_radI_01min_dataset = radiance_to_radiation(sol_radG_01min_dataset)
 
 # guardar dataset

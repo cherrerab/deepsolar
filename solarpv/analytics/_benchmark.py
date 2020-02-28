@@ -153,7 +153,8 @@ def kurtosis_error(Y_true, Y_pred, **kargs):
 #------------------------------------------------------------------------------
 # persistence model forecast
 def persistence_forecast(database, forecast_date, n_output, power_cols,
-                         lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0, rho=0.2):
+                         lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0, rho=0.2,
+                         verbose=False):
     """
     -> numpy.array(floats)
     
@@ -226,8 +227,9 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
     input_timestamp = database.at[input_index, 'Timestamp']
     
     ext_rad = ext_irradiation(input_timestamp, data_timestep, lat=lat, lon=lon)
-    clearsky_index = global_rad/ext_rad if ext_rad!=0.0 else 0.0
-    cloudness_index = diffuse_rad/global_rad if global_rad!=0.0 else 0.0
+    
+    clearsky_index = np.min([1.0, global_rad/ext_rad]) if ext_rad!=0.0 else 1.0
+    cloudness_index = np.min([1.0, diffuse_rad/global_rad]) if global_rad!=0.0 else 1.0
     
     # -------------------------------------------------------------------------
     # modelo de Perez
@@ -265,15 +267,18 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
         
         # estimacion radiaciones
         dif_i = cloudness_index*ghi
-        dir_i = ghi - dif_i
+        dir_i = (ghi - dif_i)
         
         # irradiacion difusa circumsolar
         a = np.max([0, cos_theta])
         b = np.max([cos(85.0*pi/180.0), cos_theta_z])
         
         # clearness parameter
-        eps = ( (dif_i - dir_i*rb)/dif_i +
-               5.535e-6*(theta_z*180/pi)**3 )/( 1 + 5.535e-6*(theta_z*180/pi)**3 )
+        if dif_i==0.0:
+            eps = 1.0
+        else:
+            eps = ( (dif_i - dir_i*rb)/dif_i +
+                   5.535e-6*(theta_z*180/pi)**3 )/( 1 + 5.535e-6*(theta_z*180/pi)**3 )
         
         # brightness parameter
         gon = gho/cos_theta_z if cos_theta_z !=0.0 else 0.0
@@ -299,8 +304,27 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
       
     # calcular estimaciones de potencia
     forecast_output = np.zeros((1, n_output)).flatten()
-    for i in range(n_output):
-        forecast_output[i] = (rad_fh[i+1]/rad_fh[0])*power
+    
+    # si hay información para realizar un pronóstico
+    if not(rad_fh[i]==0.0 or power==0.0):
+        for i in range(n_output):
+            forecast_output[i] = (rad_fh[i+1]/rad_fh[0])*power
+    
+    # si se desea imprimir información
+    if verbose:
+        # radiacion global
+        global_rad = database['Global'].values[date_index:end_index]
+        
+        # potencia sistema
+        syst_power = np.zeros((1, n_output)).flatten()
+        for equip in power_cols:
+            syst_power = syst_power + database[equip].values[date_index:end_index]
+        
+        print('forecasted radiation: ' + str(rad_fh[0:]) )
+        print('global radiation: ' + str(global_rad) + '\n')
+        print('forecasted power: ' + str(forecast_output) )
+        print('system power: ' + str(syst_power) )
+    
         
     return forecast_output
         
