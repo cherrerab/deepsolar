@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 import numpy as np
+from scipy.stats import binned_statistic
 
 from datetime import datetime, timedelta
 
@@ -211,7 +212,7 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date, **kargs):
     
     # -------------------------------------------------------------------------
     # verificar bases de datos
-    assert ('Timestamp' in db_pv.columns) and ('Sistema' in db_pv.columns)
+    assert ('Timestamp' in db_pv.columns) and ('Power' in db_pv.columns)
     assert ('Timestamp' in db_solar.columns) and ('Global' in db_solar.columns)
     
     # verificar que los timesteps se correspondan
@@ -257,7 +258,7 @@ def plot_performance_ratio(db_pv, db_solar, start_date, stop_date, **kargs):
     global_rad = db_solar['Global']
     global_rad = global_rad.values[ solar_index[0]:solar_index[1] ]
     
-    pv_power = db_pv['Sistema']
+    pv_power = db_pv['Power']
     pv_power = pv_power.values[ pv_index[0]:pv_index[1] ]
     
     plant_factor = 1000.0/16.2
@@ -326,7 +327,7 @@ def plot_power_irradiance(db_pv, db_solar, start_date, stop_date):
     """
     # -------------------------------------------------------------------------
     # verificar bases de datos
-    assert ('Timestamp' in db_pv.columns) and ('Sistema' in db_pv.columns)
+    assert ('Timestamp' in db_pv.columns) and ('Power' in db_pv.columns)
     assert ('Timestamp' in db_solar.columns) and ('Global' in db_solar.columns)
     
     # verificar que los timesteps se correspondan
@@ -372,7 +373,7 @@ def plot_power_irradiance(db_pv, db_solar, start_date, stop_date):
     global_rad = db_solar['Global']
     global_rad = global_rad.values[ solar_index[0]:solar_index[1] ]
     
-    pv_power = db_pv['Sistema']
+    pv_power = db_pv['Power']
     pv_power = pv_power.values[ pv_index[0]:pv_index[1] ]
     
     timestamp = db_solar['Timestamp'].values[ solar_index[0]:solar_index[1] ]
@@ -420,7 +421,7 @@ def plot_goes16_secuence(dataset, start_date, stop_date, cols=5):
     """
     
     # obtener limites del plot ------------------------------------------------
-    tmstmp = database['Timestamp'].values
+    tmstmp = dataset['Timestamp'].values
     date_format = '%d-%m-%Y %H:%M'
     
     start_date = datetime.strptime( validate_date(start_date), date_format )
@@ -460,6 +461,105 @@ def plot_goes16_secuence(dataset, start_date, stop_date, cols=5):
     plt.imshow(canvas)
     
     return None
+
+#------------------------------------------------------------------------------
+# obtener gráficos de la distribución del error
+def plot_error_dist(Y_true, Y_pred, Y_pers, horizons, **kargs): 
+    """
+    -> None
+    
+    Plotea los histogramas del error entre Y_true e Y_pred.
+    
+    :param np.array Y_true:
+        serie de valores reales donde cada columna es un pronóstico distinto y
+        cada fila corresponde a un horizonte de pronóstico.
+    :param np.array Y_pred:
+        serie de valores estimados donde cada columna es un pronóstico distinto
+        y cada fila corresponde a un horizonte de pronóstico.
+    :param np.array Y_pers:
+        serie de valores estimados por el modelo de persistencia donde cada
+        columna es un pronóstico distinto y cada fila corresponde a un horizonte
+        de pronóstico.
+        
+    :return:
+        None
+    """
+    
+    # inicializar plot
+    n_output = Y_true.shape[0]
+    fig, axs = plt.subplots( int(np.ceil(n_output/3)), 3 )
+    
+    # por cada horizonte de pronóstico
+    for i, h in enumerate(horizons):
+        # error
+        error = Y_pred[i,:] - Y_true[i,:]
+        error_pers = Y_pers[i,:] - Y_true[i,:]
+        
+        axs[i//3, i%3].hist(error, label='model', color='lightgrey', **kargs)
+        axs[i//3, i%3].hist(error_pers, label='pers', histtype='step', color='k', **kargs)
+        
+        axs[i//3, i%3].set_title(h)
+        axs[i//3, i%3].set_xlabel('error')
+        axs[i//3, i%3].set_ylabel('frecuency')
+        axs[i//3, i%3].legend(loc='best')
+        
+#------------------------------------------------------------------------------
+# obtener gráficos de la distribución del error
+def plot_error_variability(Y_true, Y_pred, cs_var, horizons, **kargs): 
+    """
+    -> None
+    
+    Realiza un scatter plot del error de pronóstico versus la variabilidad
+    del índice de claridad (cs_var). Realiza un plot por cada horizonte de
+    pronóstico.
+    
+    :param np.array Y_true:
+        serie de valores reales donde cada columna es un pronóstico distinto y
+        cada fila corresponde a un horizonte de pronóstico.
+    :param np.array Y_pred:
+        serie de valores estimados donde cada columna es un pronóstico distinto
+        y cada fila corresponde a un horizonte de pronóstico.
+    :param np.array cs_var:
+        clearsky variability de cada uno de los pronósticos entregados.
+        
+    :return:
+        None
+    """
+    
+    # inicializar plot
+    n_output = Y_true.shape[0]
+    fig, axs = plt.subplots( int(np.ceil(n_output/3)), 3 )
+    
+    cs_var = np.nan_to_num( cs_var.flatten() )
+    
+    # obtener límites de clearsky variability
+    var_xlim = np.quantile(cs_var, 0.99)
+    x = cs_var[cs_var<var_xlim]
+    
+    # por cada horizonte de pronóstico
+    for i, h in enumerate(horizons):
+        # error
+        error = np.abs( Y_pred[i,:] - Y_true[i,:] ).flatten()
+        error = error[cs_var<=var_xlim]
+        
+        # obtener bin means
+        bin_means, bin_edges, binnumber = binned_statistic(x, error, bins=15)
+        bin_width = (bin_edges[1] - bin_edges[0])
+        bin_centers = bin_edges[1:] - bin_width/2
+        
+        # obtener límites del error
+        #err_ylim = np.quantile(error, 0.999)
+        
+        axs[i//3, i%3].scatter(x, error, label='model', c='k', **kargs)
+        axs[i//3, i%3].plot(bin_centers, bin_means, c='r')
+        
+        axs[i//3, i%3].set_xlim([1e-6, var_xlim])
+        axs[i//3, i%3].set_ylim([0.0, 0.3])
+        
+        axs[i//3, i%3].set_title(h)
+        axs[i//3, i%3].set_xlabel('clearsky variabilty')
+        axs[i//3, i%3].set_ylabel('absolute error')
+    
     
     
     

@@ -170,9 +170,9 @@ def setup_lstm_dataset(dataset, output_name, days_train, days_test,
         tupla de datasets (X_train, X_test, Y_train, Y_test)
     """
     
-    print('\n' + '='*80)
+    print('\n' + '-'*80)
     print('spliting training data')
-    print('='*80 + '\n')
+    print('-'*80 + '\n')
     sleep(0.25)
     # -------------------------------------------------------------------------
     # inicialización
@@ -272,9 +272,9 @@ def setup_convlstm_dataset(dataset, days_train, days_test, n_input, n_output, ov
         tupla de datasets (X_train, X_test)
     """
     
-    print('\n' + '='*80)
+    print('\n' + '-'*80)
     print('spliting training data')
-    print('='*80 + '\n')
+    print('-'*80 + '\n')
     sleep(0.25)
     # -------------------------------------------------------------------------
     # inicialización

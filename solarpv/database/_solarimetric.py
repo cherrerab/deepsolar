@@ -12,7 +12,7 @@ pd.options.mode.chained_assignment = None
 
 from datetime import datetime, timedelta
 
-from solarpv._tools import validate_date
+from solarpv._tools import validate_date, get_timestep
 from solarpv.database._tools import parse_database
 
 from progressbar import ProgressBar
@@ -145,12 +145,8 @@ def radiance_to_radiation(database):
     
     db = database.copy()
     # obtener timestep en el dataset
-    timestamps = db['Timestamp'].values
-    
     date_format = '%d-%m-%Y %H:%M'
-    timestep = (  datetime.strptime(timestamps[1], date_format)
-                - datetime.strptime(timestamps[0], date_format))
-    secs = timestep.seconds/3600
+    secs = get_timestep(db['Timestamp'], date_format)/3600
     
     db['Global'] = [ rad*secs for rad in db['Global'].values]
     db['Diffuse'] = [ rad*secs for rad in db['Diffuse'].values]

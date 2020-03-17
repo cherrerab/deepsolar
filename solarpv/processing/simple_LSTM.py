@@ -28,40 +28,10 @@ K.set_session(sess)
 #%% load data -----------------------------------------------------------------
 import pandas as pd
 
-from solarpv.database import compact_database
-from solarpv.database import select_date_range
-from solarpv.database import adjust_timestamps
-from solarpv.database import radiance_to_radiation
-
 # -----------------------------------------------------------------------------
-# cargar datos de potencia-SMA
-sma_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/system-power-15min-dataset.pkl'
-power_dataset = pd.read_pickle(sma_15min_path)
-power_dataset = select_date_range(power_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
-
-# compactar a base de 30min
-power_dataset = compact_database(power_dataset, 2, use_average=True)
-power_dataset = adjust_timestamps(power_dataset, 15*60)
-
-# -----------------------------------------------------------------------------
-# cargar datos de temperatura-SMA
-temp_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/temperature-15min-dataset.pkl'
-temperature_dataset = pd.read_pickle(temp_15min_path)
-temperature_dataset = select_date_range(temperature_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
-
-# compactar a base de 30min
-temperature_dataset = compact_database(temperature_dataset, 2, use_average=True)
-temperature_dataset = adjust_timestamps(temperature_dataset, 15*60)
-
-# -----------------------------------------------------------------------------
-# cargar datos solarimétricos
-solar_1min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/solarimetric-1min-dataset.pkl'
-solarimetric_dataset = pd.read_pickle(solar_1min_path)
-solarimetric_dataset = select_date_range(solarimetric_dataset, '27-08-2018 04:01', '07-09-2019 00:00')
-
-# compactar a base de 30min
-solarimetric_dataset = compact_database(solarimetric_dataset, 30, use_average=True)
-solarimetric_dataset = adjust_timestamps(solarimetric_dataset, 29*60)
+# cargar datos
+dataset_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\processed\\dat_syst_30min_s20180827_e20190907.pkl'
+dataset_15min = pd.read_pickle(dataset_15min_path)
 
 #%% analysis ------------------------------------------------------------------
 from datetime import datetime, timedelta
@@ -70,67 +40,28 @@ from solarpv.analytics import plot_1D_radiation_data
 from solarpv.analytics import plot_performance_ratio
 
 # plotear dataset potencia
-plot_2D_radiation_data(power_dataset, unit='kW', colname='Sistema', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(dataset_15min, unit='kW', colname='Power', initial_date='27-08-2018',final_date='07-09-2019')
 
 # checkear resultado con día soleado
-plot_1D_radiation_data(power_dataset, 'Sistema', '04-11-2018', '05-11-2018', multiply_factor=40)
-plot_1D_radiation_data(radiance_to_radiation(solarimetric_dataset), 'Global', '04-11-2018', '05-11-2018', multiply_factor=1)
+plot_1D_radiation_data(dataset_15min, 'Power', '04-11-2018', '05-11-2018', scale_factor=40)
+plot_1D_radiation_data(dataset_15min, 'Global', '04-11-2018 06:00', '05-11-2018 06:00', scale_factor=1)
 
 # plotear dataset temperatura
-plot_2D_radiation_data(temperature_dataset, unit='°C', colname='Module', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(dataset_15min, unit='°C', colname='Module Temperature', initial_date='27-08-2018',final_date='07-09-2019')
 
 # plotear dataset solarimetrico
-plot_2D_radiation_data(radiance_to_radiation(solarimetric_dataset), unit='kWh/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(dataset_15min, unit='kW/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(dataset_15min, unit='kW/m2', colname='Diffuse', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(dataset_15min, unit='kW/m2', colname='Direct', initial_date='27-08-2018',final_date='07-09-2019')
 
-plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Global', initial_date='27-08-2018',final_date='07-09-2019')
-plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Diffuse', initial_date='27-08-2018',final_date='07-09-2019')
-plot_2D_radiation_data(solarimetric_dataset, unit='kW/m2', colname='Direct', initial_date='27-08-2018',final_date='07-09-2019')
-
-plot_2D_radiation_data(solarimetric_dataset, unit='°C', colname='Temperature', initial_date='27-08-2018',final_date='07-09-2019')
+plot_2D_radiation_data(dataset_15min, unit='°C', colname='External Temperature', initial_date='27-08-2018',final_date='07-09-2019')
 
 # plotear performance ratio
-plot_performance_ratio(power_dataset, solarimetric_dataset, '27-08-2018', '07-09-2019')
+plot_performance_ratio(dataset_15min, dataset_15min, '27-08-2018', '07-09-2019')
 
 #%% setup dataset -------------------------------------------------------------
-from datetime import datetime, timedelta
 from solarpv.database import setup_lstm_dataset
 from solarpv.database import lstm_standard_scaling
-
-
-import pandas as pd
-
-# inicilizar dataset
-colnames = ['Timestamp', 'Power', 'Module Temperature', 'External Temperature', 'Global', 'Diffuse', 'Direct', 'n_day', 'min_day']
-dataset = pd.DataFrame(0.0, index=power_dataset.index, columns=colnames)
-
-# asignar columna de timestamp y potencia
-dataset['Timestamp'] = power_dataset['Timestamp']
-dataset['Power'] = power_dataset['Sistema']
-
-dataset['Module Temperature'] = temperature_dataset['Module']
-dataset['External Temperature'] = solarimetric_dataset['Temperature']
-
-dataset['Global'] = solarimetric_dataset['Global']
-dataset['Diffuse'] = solarimetric_dataset['Diffuse']
-dataset['Direct'] = solarimetric_dataset['Direct']
-
-# -----------------------------------------------------------------------------
-# rellenar resto columnas
-date_format = '%d-%m-%Y %H:%M'
-for i in dataset.index:
-    # obtener timestamp del dato
-    timestamp = dataset.at[i, 'Timestamp']
-    timestamp = datetime.strptime(timestamp, date_format)
-    
-    date_tt = timestamp.timetuple()
-    
-    # calcular minuto del día y día en el año
-    min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
-    n_day = date_tt.tm_yday
-    
-    # asignar al dataset
-    dataset.at[i, 'n_day'] = n_day
-    dataset.at[i, 'min_day'] = min_day
 
 # ----------------------------------------------------------------------------- 
 # setup time windows
@@ -139,7 +70,7 @@ n_output = 6
 overlap = 3
 
 # realizar dataset split
-X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset, 'Power', 8, 2, n_input, n_output, overlap, ['Timestamp'])
+X_train, X_test, Y_train, Y_test = setup_lstm_dataset(dataset_15min, 'Power', 8, 2, n_input, n_output, overlap, ['Timestamp'])
 
 # -----------------------------------------------------------------------------
 # normalización
@@ -170,20 +101,20 @@ import matplotlib.pyplot as plt
 input_data = Input( shape=(n_input, n_feature) )
 
 # añadimos las capas de procesamiento
-data_model = LSTM(units = 1024, return_sequences = True)(input_data)
-data_model = LSTM(units = 1024, return_sequences = True)(data_model)
+data_model = LSTM(units = 128, return_sequences = True)(input_data)
+data_model = LSTM(units = 128, return_sequences = True)(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
-data_model = Dense(units = 1024, activation = 'relu')(data_model)
+data_model = Dense(units = 128, activation = 'relu')(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
-data_model = Dense(units = 512, activation = 'relu')(data_model)
-data_model = Dense(units = 512, activation = 'relu')(data_model)
+data_model = Dense(units = 128, activation = 'relu')(data_model)
+data_model = Dense(units = 64, activation = 'relu')(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
 # añadimos las capas de salida
 data_model = Flatten()(data_model)
-output_data = Dense(units = 512, activation = 'relu')(data_model)
+output_data = Dense(units = 64, activation = 'relu')(data_model)
 data_model = Dropout(rate = 0.2)(data_model)
 
 output_layer = Dense(units = n_output, activation = 'linear')(output_data)
@@ -195,7 +126,7 @@ optimizer_adam = Adam(lr=0.0001)
 forecasting_model.compile(optimizer = optimizer_adam, loss = 'mse', metrics = ['mae'])
 
 # entrenamos el modelo
-model_history = forecasting_model.fit(X_train, Y_train, batch_size = 256, epochs = 256, validation_data = (X_test, Y_test))
+model_history = forecasting_model.fit(X_train, Y_train, batch_size = 256, epochs = 200, validation_data = (X_test, Y_test))
 
 #%% training evaluation -------------------------------------------------------
 
@@ -229,9 +160,9 @@ from solarpv.database import compact_database
 from solarpv.database import select_date_range
 from solarpv.database import radiance_to_radiation
 
-from solarpv.analytics import cluster_evaluation
+from solarpv.analytics import forecast_error_evaluation
 
-eval_data = dataset.copy()
+eval_data = dataset_15min.copy()
 
 for i in np.arange(std_scaler.shape[0]):
     feature_min = std_scaler[i, 0]
@@ -239,4 +170,5 @@ for i in np.arange(std_scaler.shape[0]):
     eval_data.iloc[:,i+1] = (eval_data.iloc[:,i+1] - feature_min)/(feature_max-feature_min)
 
 # evaluar modelo de forecasting
-cluster_metrics = cluster_evaluation(solar_5min_dataset, [eval_data], 'Power', model, plot_clusters=True, random_state=33)
+cluster_metrics = forecast_error_evaluation([eval_data], 'Power', forecasting_model, 3, plot_results=False)
+

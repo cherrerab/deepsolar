@@ -51,7 +51,7 @@ def day_clear_sky_index(day_data, **kargs):
     ext_sum = sum(ext_rad)
     
     # retornar cuociente
-    return data_sum/ext_sum
+    return data_sum/ext_sum if ext_sum!=0.0 else 0.0
 
 #------------------------------------------------------------------------------
 # obtener fracción difusa diaria total
@@ -128,18 +128,14 @@ def clearsky_variability(database, timestamp, timesteps, side='backward', **karg
     # calcular radiacion extraterrestre
     ext_rad = [ext_irradiation(t, secs, **kargs) for t in timestamps]
     # calcular clearsky index
-    clearsky = np.divide( global_rad, ext_rad )
+    clearsky = np.divide( global_rad, ext_rad, np.zeros_like(global_rad), where=ext_rad!=0.0)
+    clearsky[np.isinf(clearsky)] = 0.0
     
     # obtener desviacion estandar
     v = np.std( np.diff(clearsky) )
     
     return v
         
-        
-        
-    
-    
-
 #------------------------------------------------------------------------------
 # realizar clustering sobre los datos díarios de radiación
 def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=True,

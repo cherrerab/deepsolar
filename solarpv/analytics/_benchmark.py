@@ -282,7 +282,7 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
         
         # brightness parameter
         gon = gho/cos_theta_z if cos_theta_z !=0.0 else 0.0
-        brp = (1/cos_theta_z)*(dif_i/gon) if cos_theta_z !=0.0 else 0.0
+        brp = (1/cos_theta_z)*(dif_i/gon) if (cos_theta_z!=0.0) and (gon!=0.0) else 0.0
         
         # obtener coeficientes
         idx = np.searchsorted(coefs['e'], eps, side='right') - 1
@@ -326,7 +326,7 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
         print('system power: ' + str(syst_power) )
     
         
-    return forecast_output
+    return np.reshape(forecast_output, (n_output, -1))
         
 #------------------------------------------------------------------------------
 # forecast skill

@@ -16,9 +16,12 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from solarpv._tools import validate_date, get_timestep, get_date_index
-from solarpv.analytics import cluster_daily_radiation
+
+from solarpv.analytics import cluster_daily_radiation, clearsky_variability, persistence_forecast
 from solarpv.analytics import mean_squared_error, mean_absolute_error, mean_bias_error
 from solarpv.analytics import skew_error, kurtosis_error, forecast_skill
+from solarpv.analytics import plot_error_dist, plot_error_variability
+
 
 from solarpv.database import time_window_dataset, img_sequence_dataset
 
@@ -27,7 +30,7 @@ import numpy as np
 #------------------------------------------------------------------------------
 # evaluar modelo en cierto periodo de tiempo
 def forecast_pred(datasets, output_name, model, forecast_date,
-                  img_sequence=None):
+                  img_sequence=None, verbose=True):
     """
     -> (np.array, np.array)
     
@@ -69,8 +72,9 @@ def forecast_pred(datasets, output_name, model, forecast_date,
         assert start_index >= 0
         assert end_index < system_ds.shape[0]
     except AssertionError:
-        print('InputError: no es posible aplicar el modelo en la ventana'+
-              'de tiempo especificada')
+        if verbose:
+            print('InputError: no es posible aplicar el modelo en la ventana'+
+                  'de tiempo especificada')
         return None
     
     # definir datos
@@ -326,8 +330,8 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
             # obtener forecasting_times de testing
             timeleap = timestep*data_leap
             
-            initial_hour = datetime.strptime(date, date_format)
-            hours = [initial_hour + timedelta(seconds=timeleap*i) for i in range(24*3600/timestep)]
+            initial_hour = datetime.strptime(date, '%d-%m-%Y')
+            hours = [initial_hour + timedelta(seconds=timeleap*i) for i in range(int(24*3600/timeleap))]
             pred_times = [datetime.strftime(h, date_format) for h in hours]
             
             # calcular predicción en cada una de las horas
@@ -337,7 +341,10 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
                     Y_true, Y_pred = forecast_pred(datasets, output_name, model, pred_time, img_sequence=img_sequence)
                     
                     # prediccion del persistence model
-                    Y_pers = beauchef_persistence_forecast(system_ds, pred_time, n_output)
+                    Y_pers = persistence_forecast(system_ds, pred_time, n_output)
+                    
+                    # print progress
+                    print('\revaluating cluster ' + str(int(label)) + ': ' + pred_time, end='')
                     
                 except TypeError:
                     continue
@@ -348,9 +355,9 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
                 cluster_pers.append(Y_pers)
         
         # calcular metricas del cluster
-        Y_true = np.concatenate(cluster_data).flatten()
-        Y_pred = np.concatenate(cluster_pred).flatten()
-        Y_pers = np.concatenate(cluster_pers).flatten()
+        Y_true = np.concatenate(cluster_data, axis=None)
+        Y_pred = np.concatenate(cluster_pred, axis=None)
+        Y_pers = np.concatenate(cluster_pers, axis=None)
         
         eval_metrics.at[label, 'mbe'] = mean_bias_error(Y_true, Y_pred)
         eval_metrics.at[label, 'mae'] = mean_absolute_error(Y_true, Y_pred)
@@ -367,6 +374,152 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
         plot_forecast_accuracy(Y_true, Y_pred, title=plot_title, s=0.1)
       
     return eval_metrics
+
+#------------------------------------------------------------------------------
+# realizar analisis de error sobre modelo
+def forecast_error_evaluation(datasets, output_name, model, data_leap,
+                              cluster_labels=[], img_sequence=None,
+                              plot_results=True, random_state=0,
+                              save_path=None):
+    """
+    -> DataFrame
+    
+    retorna métricas respecto al error del modelo de forecast en base a su
+    desempeño sobre el dataset entregado.
+    
+    :param list(DataFrame) datasets:
+        lista que contiene los datasets con los atributos correspondientes a
+        los inputs del model de pronóstico.
+    :param str output_name:
+        nombre de la columna que contiene los datos del set Y.
+    :param keras.model model:
+        modelo de forecasting a evaluar.
+    :param int data_leap:
+        define el intervalo de tiempo entre cada pronóstico a realizar.
+    :param list or array_like cluster_labels:
+        contiene la etiqueta que identifica el cluster da cada día en el dataset.
+    :param int img_sequence: (default None)
+        indice del dataset que consiste en una sequencia de imagenes.
+    :param bool plot_results:
+        determina si se muestran los gráficos de la evaluación.
+    :param int random_state:
+        permite definir el random_state en la evaluación.
+    :param str save_path:
+        ubicación del directorio en donde guardar los resultados.
+        
+    :returns:
+        DataFrame
+    """
+    
+    random.seed(random_state)
+
+    # obtener lista de días
+    system_ds = datasets[0]
+    
+    date_format = '%d-%m-%Y %H:%M'
+    timestamps = system_ds['Timestamp'].values
+    
+    timestep = get_timestep(system_ds['Timestamp'], date_format)
+    
+    initial_date = datetime.strptime(timestamps[0], date_format)
+    final_date = datetime.strptime(timestamps[-1], date_format)
+    
+    dates = pd.date_range(initial_date, final_date, freq='1D')
+    dates = dates.strftime('%d-%m-%Y')
+    
+    # -------------------------------------------------------------------------
+    # evaluar modelo
+    print('\n' + '-'*80)
+    print('cluster evaluation summary')
+    print('-'*80 + '\n')
+    
+    n_input = int(model.input.shape[1])
+    n_output = int(model.output.shape[1])
+    
+    # checkear cluster_labels
+    if  not cluster_labels:
+        cluster_labels = np.zeros([1, dates.size]).flatten()
+        num_labels = np.max(cluster_labels) + 1
+        
+    num_labels = np.max(cluster_labels) + 1
+    
+    # inicializar metrics dataframe
+    cols = []
+    
+    horizons = [str( (h + 1)*timestep/60.0 ) + ' min' for h in range(n_output)]
+    metrics = ['mbe', 'mae', 'rmse', 'fs', 'std', 'skw', 'kts']
+    for m in metrics:
+        cols += [m + ' ' + h for h in horizons]
+        
+    eval_metrics = pd.DataFrame(index=np.arange(num_labels), columns=cols)
+    
+    # para cada etiqueta resultante del clustering
+    for label in np.arange(num_labels):
+        # obtener fechas correspondientes a la etiqueta
+        cluster_dates = dates[cluster_labels==label]
+        
+        # inicializar datos cluster
+        cluster_data = []
+        cluster_pred = []
+        cluster_pers = []
+        cluster_var = []
+        
+        # por cada una de las fechas del cluster
+        for date in cluster_dates:
+            # obtener forecasting_times de testing
+            timeleap = timestep*data_leap
+            
+            initial_hour = datetime.strptime(date, '%d-%m-%Y')
+            hours = [initial_hour + timedelta(seconds=timeleap*i) for i in range(int(24*3600/timeleap))]
+            pred_times = [datetime.strftime(h, date_format) for h in hours]
+            
+            # calcular predicción en cada una de las horas
+            for pred_time in pred_times:
+                try:
+                    # prediccion del modelo
+                    Y_true, Y_pred = forecast_pred(datasets, output_name, model,
+                                                   pred_time, img_sequence=img_sequence,
+                                                   verbose=False)
+                    
+                    # prediccion del persistence model
+                    Y_pers = persistence_forecast(system_ds, pred_time, n_output, ['Inversor 1'])
+                    
+                    # clearsky variability
+                    cs_var = clearsky_variability(system_ds, pred_time, n_input)
+                    
+                    # print progress
+                    print('\revaluating cluster ' + str(int(label)) + ': ' + pred_time, end='')
+                    
+                except TypeError:
+                    continue
+                
+                # agregar datos a cluster data
+                cluster_data.append(Y_true)
+                cluster_pred.append(Y_pred)
+                cluster_pers.append(Y_pers)
+                cluster_var.append(cs_var)
+        
+        # calcular metricas del cluster
+        Y_true = np.concatenate(cluster_data, axis=1)
+        Y_pred = np.concatenate(cluster_pred, axis=1)
+        Y_pers = np.concatenate(cluster_pers, axis=1)
+        cs_var = np.array(cluster_var)
+        
+        # por cada horizonte de pronóstico
+        for i, h in enumerate(horizons):
+            eval_metrics.at[label, 'mbe ' + h] = mean_bias_error(Y_true[i,:], Y_pred[i,:])
+            eval_metrics.at[label, 'mae ' + h] = mean_absolute_error(Y_true[i,:], Y_pred[i,:])
+            eval_metrics.at[label, 'rmse ' + h] = np.sqrt(mean_squared_error(Y_true[i,:], Y_pred[i,:]))
+            eval_metrics.at[label, 'fs ' + h] = forecast_skill(Y_true[i,:], Y_pred[i,:], Y_pers[i,:])
+            eval_metrics.at[label, 'skw ' + h] = skew_error(Y_true[i,:], Y_pred[i,:])
+            eval_metrics.at[label, 'kts ' + h] = kurtosis_error(Y_true[i,:], Y_pred[i,:])
+            
+        # plot distribución de error
+        plot_error_dist(Y_true, Y_pred, Y_pers, horizons, bins=40, log=True, range=(-0.5,0.5))
+        plot_error_variability(Y_true, Y_pred, cs_var, horizons, s=0.08)
+      
+    return eval_metrics
+    
     
 #------------------------------------------------------------------------------
 # realizar evaluación respecto a clusters de días
@@ -469,5 +622,8 @@ def cluster_evaluation(solar_database, datasets, output_name, model,
     
     print(cluster_metrics)    
     return cluster_metrics
+
+
+
                 
                 
