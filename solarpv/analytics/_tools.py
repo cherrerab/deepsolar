@@ -112,9 +112,9 @@ def clearsky_variability(database, timestamp, timesteps, side='backward', **karg
     
     # definir indices del periodo
     if side=='backward':
-        data_index = np.arange( (idx - timesteps), (idx + 1) )
+        data_index = np.arange( (idx - timesteps), idx )
     else:
-        data_index = np.arange( idx, (idx + timesteps + 1) )
+        data_index = np.arange( idx, (idx + timesteps) )
         
     # obtener radiacion global en el periodo
     timestamps = database.loc[data_index, 'Timestamp'].values

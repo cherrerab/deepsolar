@@ -17,7 +17,8 @@ import pandas as pd
 
 from solarpv._tools import validate_date, get_timestep, get_date_index
 
-from solarpv.analytics import cluster_daily_radiation, clearsky_variability, persistence_forecast
+from solarpv.analytics import cluster_daily_radiation, clearsky_variability
+from solarpv.analytics import persistence_predict
 from solarpv.analytics import mean_squared_error, mean_absolute_error, mean_bias_error
 from solarpv.analytics import skew_error, kurtosis_error, forecast_skill
 from solarpv.analytics import plot_error_dist, plot_error_variability
@@ -341,7 +342,7 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
                     Y_true, Y_pred = forecast_pred(datasets, output_name, model, pred_time, img_sequence=img_sequence)
                     
                     # prediccion del persistence model
-                    Y_pers = persistence_forecast(system_ds, pred_time, n_output)
+                    Y_pers = persistence_predict(system_ds, pred_time, n_output)
                     
                     # print progress
                     print('\revaluating cluster ' + str(int(label)) + ': ' + pred_time, end='')
@@ -482,7 +483,7 @@ def forecast_error_evaluation(datasets, output_name, model, data_leap,
                                                    verbose=False)
                     
                     # prediccion del persistence model
-                    Y_pers = persistence_forecast(system_ds, pred_time, n_output, ['Inversor 1'])
+                    Y_pers = persistence_predict(system_ds, pred_time, n_output, ['Inversor 1'])
                     
                     # clearsky variability
                     cs_var = clearsky_variability(system_ds, pred_time, n_input)

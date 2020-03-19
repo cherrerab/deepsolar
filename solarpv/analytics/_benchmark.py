@@ -8,10 +8,9 @@ v1.0 - update, Aug 01 2019
 """
 
 
-import matplotlib.pyplot as plt
-import random
 import os
 import inspect
+from time import sleep
 
 from datetime import datetime, timedelta
 
@@ -19,142 +18,201 @@ import pandas as pd
 
 from solarpv._tools import validate_date, get_date_index, ext_irradiation, get_timestep, solar_incidence
 from solarpv.database import read_csv_file
+from solarpv.analytics import mean_squared_error
 
 import numpy as np
+from scipy.optimize import minimize
 from math import (pi, cos, sin, tan, acos)
-from scipy.stats import skew, kurtosis
 
 
 #------------------------------------------------------------------------------
-# mean absolute error
-def mean_squared_error(Y_true, Y_pred):
+# AR model predict
+def ar_predict(X, ar_param):
     """
     -> float
     
-    calcula el error cuadrado medio de la diferencia entre Y_true e Y_pred.
+    realiza una predicción mediante un modelo AR(ar_param) sobre la serie
+    de tiempo entregada (X).
     
-    :param np.array Y_true:
-        serie de valores reales.
-    :param np.array Y_pred:
-        serie de valores estimados.
+    :param np.array X:
+        serie de tiempo sobre la cual realizar la predicción.
+    :param np.array ar_param:
+        parámetros del modelo AR.
     
     :returns:
-        error cuadrado medio de la diferencia.
+        valor resultante de la autoregresión.
     """
     
-    # calcular error
-    error = Y_pred.flatten() - Y_true.flatten()
+    # checkear serie de tiempo y parámetros
+    assert X.shape == ar_param.shape
     
-    # calcular error cuadrado medio
-    mse = np.sqrt(np.mean(np.power(error, 2)))
+    # calcular
+    prediction = np.sum(np.multiply(X, ar_param))
     
-    return mse
+    return prediction
 
 #------------------------------------------------------------------------------
-# mean absolute error
-def mean_absolute_error(Y_true, Y_pred):
+# AR model fit
+def ar_fit(X_train, Y_train, val_set=None, solver='Nelder-Mead'):
     """
-    -> float
+    -> numpy.array(floats)
     
-    calcula el error absoluto medio de la diferencia entre Y_true e Y_pred.
+    estima los parámetros del modelo de autoregresion que minimicen el mse
+    entre las predicciones y los valores de entrenamiento Y_train.
     
-    :param np.array Y_true:
-        serie de valores reales.
-    :param np.array Y_pred:
-        serie de valores estimados.
-    
-    :returns:
-        error absoluto medio de la diferencia.
+    :param numpy.array X_train:
+        serie de datos input de entrenamiento. (num_samples, num_input)
+    :param numpy.array Y_train:
+        serie de datos output de entrenamiento. (num_samples, num_output)
+    :param tuple(numpy.array) val_set:
+        serie de datos (X_val, Y_val) para validación.
+    :param str solver:
+        método/sover a utlizar en la minimización (scipy.optimize.minimize)
+        default='Nelder-Mead'
+        
+    :returns: los parámetros del modelo AR.
+        
     """
+    print('\n' + '-'*80)
+    print('fitting autoregressive model parameters')
+    print('-'*80 + '\n')
+    sleep(0.25)
     
-    # calcular error
-    error = Y_pred.flatten() - Y_true.flatten()
+    # checkear que el solver especificado sea admisible
+    assert solver in ['Nelder-Mead','Powell','CG','BFGS','L-BFGS-B','TNC','SLSQP']
     
-    # calcular error absoluto medio
-    mae = np.mean( np.abs(error) )
+    # obtener características de los datos
+    n_time_series, n_input = X_train.shape
+    n_output = Y_train.shape[1]
     
-    return mae
+    # inicializar parámetros (normal)
+    parameters = np.random.uniform(low=-1, high=1, size=n_input)
+    
+    # optimización ------------------------------------------------------------
+    num_steps = 0
+    
+    # inicializar registro de scores
+    score_hist = []
+    
+    # definir función score
+    def optimization_step(ar_param):
+        nonlocal num_steps
+        nonlocal score_hist
+        
+        # inicializar matriz de predicción
+        Y_pred = np.zeros_like(Y_train)
+        
+        # por cada serie de tiempo
+        for i in range(n_time_series):
+            
+            # inicializar serie de tiempo auxiliar
+            x = np.zeros([1, n_input+n_output]).flatten()
+            x[0:n_input] = X_train[i, :]
+            
+            for j in range(n_input, n_input+n_output):
+                # predecir usando ar
+                x[j] = ar_predict(x[j-n_input:j], ar_param)
+            
+            # agregar predicciones
+            Y_pred[i,:] = x[n_input:n_input+n_output]
+            
+        # calcular errror
+        score = mean_squared_error(Y_train, Y_pred)
+        score_hist.append(score)
+        
+        # print progress
+        if num_steps%10 == 0:
+            print('\rstep: %5d, score: %3.3f' %(num_steps, score), end='')
+        
+        num_steps += 1
+        return score
+    
+    # minimizar
+    res = minimize(fun=optimization_step, x0=parameters, method=solver,
+                   options={'maxiter': 10000, 'disp': False})
+    params = np.reshape(res.x, (1, n_input))
+    
+    # validación
+    if val_set:
+        print('\n\nevaluating on validation set: ', end='')
+        
+        X_val, Y_val = val_set
+        assert X_val.shape[1] == params.shape[1]
+        
+        num_time_series = X_val.shape[0]
+        Y_pred = np.zeros_like(Y_val)
+        
+        # por cada serie de tiempo
+        for i in range(num_time_series):
+            # inicializar serie de tiempo auxiliar
+            x = np.zeros([1, n_input+n_output]).flatten()
+            x[0:n_input] = X_val[i, :]
+            
+            for j in range(n_input, n_input+n_output):
+                # predecir usando ar
+                x[j] = ar_predict(x[j-n_input:j], params.flatten())
+            
+            # agregar predicciones
+            Y_pred[i,:] = x[n_input:n_input+n_output]
+        
+        # calcular error
+        val_score = mean_squared_error(Y_val, Y_pred)
+        print('done')
+        
+        print('\nAR fit completed:')
+        print('fit_score: %3.3f, val_score: %3.3f' %(score_hist[-1], val_score))
+    
+    else:
+        print('\nAR fit completed:')
+        print('fit_score: %3.3f' %(score_hist[-1]))
+    
+    # retornar
+    print('parameters: ', params.flatten())
+    
+    return params, res, score_hist
 
 #------------------------------------------------------------------------------
-# mean bias error
-def mean_bias_error(Y_true, Y_pred):
+# KNN model predict
+def knn_predict(X, k, X_train, Y_train):
     """
-    -> float
+    -> numpy.array(float)
     
-    calcula el error medio de la diferencia entre Y_true e Y_pred.
+    realiza una predicción mediante el modelo KNN sobre los datos train.
     
-    :param np.array Y_true:
-        serie de valores reales.
-    :param np.array Y_pred:
-        serie de valores estimados.
-    
+    :param np.array X:
+        serie de tiempo sobre la cual realizar la predicción.
+    :param int k:
+        k nearest neighbours a considerar en la predicción.
+    :param numpy.array X_train:
+        serie de datos input de entrenamiento. (num_samples, num_input)
+    :param numpy.array Y_train:
+        serie de datos output de entrenamiento. (num_samples, num_output)
+        
     :returns:
-        error medio de la diferencia.
+        serie de datos estiamdos (1, num_output)
     """
     
-    # calcular error
-    error = Y_pred.flatten() - Y_true.flatten()
+    # generar matriz de distancias
+    dist_X = np.zeros((1, X_train.shape[0]))
     
-    # calcular error absoluto medio
-    mae = np.mean( error )
+    for i in range(X_train.shape[0]):
+        # calcular distancia
+        dist_X[0, i] = np.linalg.norm(X - X_train[i,:])
+        
+    # sort
+    index = np.arange(X_train.shape[0])
+    sorted_dist = index[ np.argsort(dist_X) ].flatten()
     
-    return mae
-
-#------------------------------------------------------------------------------
-# skew error
-def skew_error(Y_true, Y_pred, **kargs):
-    """
-    -> float
+    # promediar primeras k series Y_train
+    Y_pred = np.mean( Y_train[sorted_dist[0:k], :], axis=0 )
     
-    calcula el skewness de la diferencia entre Y_true e Y_pred.
-    
-    :param np.array Y_true:
-        serie de valores reales.
-    :param np.array Y_pred:
-        serie de valores estimados.
-    
-    :returns:
-        skewness de la diferencia.
-    """
-    
-    # calcular error
-    error = Y_pred.flatten() - Y_true.flatten()
-    
-    # calcular kurtosis
-    skw = skew(error, **kargs)
-    
-    return skw
-
-#------------------------------------------------------------------------------
-# kurtosis
-def kurtosis_error(Y_true, Y_pred, **kargs):
-    """
-    -> float
-    
-    calcula el kurtosis de la diferencia entre Y_true e Y_pred.
-    
-    :param np.array Y_true:
-        serie de valores reales.
-    :param np.array Y_pred:
-        serie de valores estimados.
-    
-    :returns:
-        kurtosis de la diferencia.
-    """
-    
-    # calcular error
-    error = Y_pred.flatten() - Y_true.flatten()
-    
-    # calcular kurtosis
-    kts = kurtosis(error, **kargs)
-    
-    return kts
+    return Y_pred
 
 #------------------------------------------------------------------------------
 # persistence model forecast
-def persistence_forecast(database, forecast_date, n_output, power_cols,
-                         lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0, rho=0.2,
-                         verbose=False):
+def persistence_predict(database, forecast_date, n_output, power_cols,
+                        lat=-33.45775, lon=70.66466111, Bs=0.0, Zs=0.0, rho=0.2,
+                        verbose=False):
     """
     -> numpy.array(floats)
     
@@ -238,7 +296,7 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
     rad_fh = np.zeros((1, n_output + 1)).flatten()
     
     # incializar matriz de coeficientes
-    file_dir = os.path.dirname( os.path.abspath(inspect.getfile(persistence_forecast)) )
+    file_dir = os.path.dirname( os.path.abspath(inspect.getfile(persistence_predict)) )
     file_path = os.path.join( file_dir, 'perez_coefs.csv')
     
     coefs = read_csv_file(file_path)
@@ -328,35 +386,6 @@ def persistence_forecast(database, forecast_date, n_output, power_cols,
         
     return np.reshape(forecast_output, (n_output, -1))
         
-#------------------------------------------------------------------------------
-# forecast skill
-def forecast_skill(Y_true, Y_pred, Y_base, **kargs):
-    """
-    -> float
-    
-    calcula el forecast skill (%) entre los valores Y_pred e Y_base.
-    
-    :param np.array Y_true:
-        serie de valores reales.
-    :param np.array Y_pred:
-        serie de valores estimados.
-    :param np.array Y_pred:
-        serie de valores estimados mediante un modelo base.
-    
-    :returns:
-        forecast skill de los valores estimados.
-    """
-    
-    # calcular rmse Y_pred
-    rmse = np.sqrt( mean_squared_error(Y_true, Y_pred) )
-    
-    # calcular rmse Y_base
-    rmse_b = np.sqrt( mean_squared_error(Y_true, Y_base) )
-    
-    # calcular forecast skill
-    fs = 1.0 - rmse/rmse_b
-    
-    return fs
         
         
         

@@ -172,3 +172,29 @@ for i in np.arange(std_scaler.shape[0]):
 # evaluar modelo de forecasting
 cluster_metrics = forecast_error_evaluation([eval_data], 'Power', forecasting_model, 3, plot_results=False)
 
+#%%
+from solarpv.analytics import ar_fit
+
+X_train_ar = X_train[:,:,0]
+X_val_ar = X_test[:,:,0]
+ar_params, _, _ = ar_fit(X_train_ar, Y_train, val_set=(X_val_ar, Y_test))
+
+#%%
+from solarpv.analytics import knn_predict
+from solarpv.analytics import mean_squared_error
+
+X_train_knn = X_train[:,:,0]
+
+X_val_knn = X_test[:,:,0]
+
+Y_pred = np.zeros_like(Y_test)
+
+for i in range(X_val_knn.shape[0]):
+    Y_pred[i,:] = knn_predict(X_val_knn[i,:], 12, X_train_knn, Y_train)
+    
+    print('\nprediction: %4d' %(i))
+    print(Y_pred[i,:])
+    print(Y_test[i,:])
+    
+print(mean_squared_error(Y_test, Y_pred))
+    
