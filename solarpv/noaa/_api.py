@@ -101,7 +101,6 @@ def get_keys(bucket, prefix=''):
     while True:
         # obtener la lista de objects en el bucket
         response = s3.list_objects_v2(**kwargs)
-        
         # filtrar aquellas keys que comienzan con el prefijo
         for obj in response['Contents']:
             key = obj['Key']
@@ -111,6 +110,7 @@ def get_keys(bucket, prefix=''):
         # si el bucket está truncado, obtner el token siguiente
         try:
             kwargs['ContinuationToken'] = response['NextContinuationToken']
+            break
         except KeyError:
             break
             

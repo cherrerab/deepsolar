@@ -196,10 +196,8 @@ def cluster_daily_radiation(database, eps=0.09, min_samples=9, plot_clusters=Tru
         cloudless = day_cloudless_index(global_data, diffuse_data)
         
         # suavidad del perfil
-        print(len(global_data))
         smoothed_data =  np.convolve(global_data, gaussian, mode='same')
         smoothed_data = smoothed_data/np.sum( gaussian )
-        print(len(smoothed_data))
         
         smooth_error = np.mean( np.power(global_data - smoothed_data, 2) )
         smooth_error = np.sqrt(smooth_error)

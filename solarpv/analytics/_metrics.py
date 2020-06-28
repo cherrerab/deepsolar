@@ -53,7 +53,7 @@ def mean_squared_error(Y_true, Y_pred):
     error = Y_pred.flatten() - Y_true.flatten()
     
     # calcular error cuadrado medio
-    mse = np.sqrt(np.mean(np.power(error, 2)))
+    mse = np.mean(np.power(error, 2))
     
     return mse
 
@@ -106,6 +106,31 @@ def mean_bias_error(Y_true, Y_pred):
     mae = np.mean( error )
     
     return mae
+
+#------------------------------------------------------------------------------
+# standard devation error
+def std_error(Y_true, Y_pred, **kargs):
+    """
+    -> float
+    
+    calcula el skewness de la diferencia entre Y_true e Y_pred.
+    
+    :param np.array Y_true:
+        serie de valores reales.
+    :param np.array Y_pred:
+        serie de valores estimados.
+    
+    :returns:
+        skewness de la diferencia.
+    """
+    
+    # calcular error
+    error = Y_pred.flatten() - Y_true.flatten()
+    
+    # calcular kurtosis
+    std = np.std(error, **kargs)
+    
+    return std
 
 #------------------------------------------------------------------------------
 # skew error

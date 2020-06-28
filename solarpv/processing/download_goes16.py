@@ -29,16 +29,19 @@ Descargar imágenes satelitales de la noaa.
 from solarpv.noaa import download_goes16_data_v2
 
 # ubicación de la carpeta donde se guardarán los datasets descargados
-save_path = 'C:\\Cristian\\prueba'
+save_path = '/media/hecate/Seagate Backup Plus Drive/goes16_ABI-L2-ACMF_M3'
 
 # fecha en formato %d-%m-%Y %H:%M desde la que comienza el periodo.
-start_time = '15-09-2019 22:10'
+start_time = '27-08-2018 00:00'
 
 # fecha en formato %d-%m-%Y %H:%M en la que termina el periodo.
-end_time = '18-09-2019 23:00'
+end_time = '27-11-2018 01:00'
 
 # download
-dwnl = download_goes16_data_v2(save_path, start_time, end_time)
+dwnl = download_goes16_data_v2(save_path, start_time, end_time,
+                               product='ABI-L2-ACMF',
+                               mode='M3',
+                               channel='')
 
 
 

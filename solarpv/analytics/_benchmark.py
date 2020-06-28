@@ -44,6 +44,8 @@ def ar_predict(X, ar_param):
     """
     
     # checkear serie de tiempo y parámetros
+    X = np.array(X).flatten()
+    ar_param = np.array(ar_param).flatten()
     assert X.shape == ar_param.shape
     
     # calcular
@@ -51,6 +53,49 @@ def ar_predict(X, ar_param):
     
     return prediction
 
+#------------------------------------------------------------------------------
+# AR model predict
+def ar_predict_v2(X, ar_param, n_output):
+    """
+    -> float
+    
+    realiza una predicción mediante un modelo AR(ar_param) sobre la serie
+    de tiempo entregada (X) de manera recursiva hasta completar los n_ouput
+    pronósticos.
+    
+    :param np.array X:
+        serie de tiempo sobre la cual realizar la predicción.
+    :param np.array ar_param:
+        parámetros del modelo AR.
+    :param int n_output:
+        cantidad de pronósticos a realizar.
+    
+    :returns:
+        valor resultante de la autoregresión.
+    """
+    
+    # checkear serie de tiempo y parámetros
+    X = np.array(X).flatten()
+    ar_param = np.array(ar_param).flatten()
+    assert X.shape == ar_param.shape
+    
+    n_input = X.shape[0]
+
+    # inicializar matriz de predicción
+    Y_pred = np.zeros((n_output, 1))
+    
+    # inicializar serie de tiempo auxiliar
+    x = np.zeros([1, n_input+n_output]).flatten()
+    x[0:n_input] = X
+
+    for j in range(n_input, n_input+n_output):
+        # predecir usando ar
+        x[j] = ar_predict(x[j-n_input:j], ar_param)
+    
+    # agregar predicciones
+    Y_pred[:,0] = x[n_input:n_input+n_output]
+    return Y_pred
+    
 #------------------------------------------------------------------------------
 # AR model fit
 def ar_fit(X_train, Y_train, val_set=None, solver='Nelder-Mead'):
@@ -191,6 +236,7 @@ def knn_predict(X, k, X_train, Y_train):
     :returns:
         serie de datos estiamdos (1, num_output)
     """
+    X = np.array(X).flatten()
     
     # generar matriz de distancias
     dist_X = np.zeros((1, X_train.shape[0]))
@@ -205,8 +251,9 @@ def knn_predict(X, k, X_train, Y_train):
     
     # promediar primeras k series Y_train
     Y_pred = np.mean( Y_train[sorted_dist[0:k], :], axis=0 )
+    n_output = Y_train.shape[1]
     
-    return Y_pred
+    return np.reshape(Y_pred, (n_output,1))
 
 #------------------------------------------------------------------------------
 # persistence model forecast
@@ -317,15 +364,15 @@ def persistence_predict(database, forecast_date, n_output, power_cols,
         cos_theta = solar_incidence(new_timestamp,
                                     lat=lat, lon=lon, Bs=Bs, Zs=Zs)
         cos_theta_z = solar_incidence(new_timestamp, lat=lat, lon=lon)
-        
+
         rb = cos_theta/cos_theta_z if cos_theta_z !=0.0 else 0.0
-        
+
         # zenith
         theta_z = acos(cos_theta_z)
         
         # estimacion radiaciones
         dif_i = cloudness_index*ghi
-        dir_i = (ghi - dif_i)
+        dir_i = (ghi - dif_i)*sin(pi/2 - theta_z)
         
         # irradiacion difusa circumsolar
         a = np.max([0, cos_theta])
@@ -352,19 +399,18 @@ def persistence_predict(database, forecast_date, n_output, power_cols,
         F2 = (f21 + f22*brp + theta_z*f23)
         
         # corregir angulos de la superfice
-        Bs = Bs*pi/180
-        Zs = Zs*pi/180
-        
+        Bs_rad = Bs*pi/180
+
         # calcular irradiación total
-        gti = ( dir_i*rb + dif_i*(1 - F1)*(1 + cos(Bs))/2 + dif_i*F1*a/b
-               + dif_i*F2*sin(Bs) + ghi*rho*(1 - cos(Bs))/2 )
+        gti = ( dir_i*rb + dif_i*(1 - F1)*(1 + cos(Bs_rad))/2 + dif_i*F1*a/b
+               + dif_i*F2*sin(Bs_rad) + ghi*rho*(1 - cos(Bs_rad))/2 )
         rad_fh[i] = gti
       
     # calcular estimaciones de potencia
     forecast_output = np.zeros((1, n_output)).flatten()
-    
+
     # si hay información para realizar un pronóstico
-    if not(rad_fh[i]==0.0 or power==0.0):
+    if not(rad_fh[0]==0.0 or power==0.0):
         for i in range(n_output):
             forecast_output[i] = (rad_fh[i+1]/rad_fh[0])*power
     
@@ -378,20 +424,55 @@ def persistence_predict(database, forecast_date, n_output, power_cols,
         for equip in power_cols:
             syst_power = syst_power + database[equip].values[date_index:end_index]
         
-        print('forecasted radiation: ' + str(rad_fh[0:]) )
+        print('forecasted radiation: ' + str(rad_fh) )
         print('global radiation: ' + str(global_rad) + '\n')
         print('forecasted power: ' + str(forecast_output) )
-        print('system power: ' + str(syst_power) )
+        print('system power: ' + str(syst_power) +'\n')
     
         
     return np.reshape(forecast_output, (n_output, -1))
         
+#------------------------------------------------------------------------------
+# persistence model forecast
+def beauchef_pers_predict(database, forecast_date, n_output):
+    """
+    -> numpy.array(floats)
+    
+    genera un pronóstico de generación fotovoltaica dentro del horizonte
+    especificado a partir del criterio de persistencia y el modelo de Perez.
+    
+    Se supone que tanto el índice de claridad como la fracción difusa del
+    timestamp especificado se mantienen constantes dentro de todo el horizonte.
+    
+    :param DataFrame database:
+        base de datos que contiene el registro temporal del sistema fotovoltaico.
+    :param str forcast_date:
+        fecha y hora en la que realizar el pronóstico %d-%m-%Y %H:%M (UTC).
+    :param int n_output:
+        cantidad de pronósticos a realizar desde el forcast_date especificado.
+    :param str or list(str) power_cols:
+        nombre de las columnas que tienen la potencia de los equipos a
+        pronosticar.
         
+    :returns:
+        array con las potencias pronosticadas dentro de el horizonte.
+    """
+    
+    # -------------------------------------------------------------------------
+    # obtener predicción paneles orientados al oriente
+    Y_pred_ori = persistence_predict(database, forecast_date, n_output,
+                                         power_cols=['Inversor 1', 'Inversor 2'],
+                                         lat=-33.45775, lon=70.66466111,
+                                         Bs=16.0, Zs=-90.0,
+                                         rho=0.2, verbose=False)
+    
+    # obtener predicción paneles orientados al occidente
+    Y_pred_occ = persistence_predict(database, forecast_date, n_output,
+                                     power_cols=['Inversor 3', 'Inversor 4'],
+                                     lat=-33.45775, lon=70.66466111,
+                                     Bs=16.0, Zs=90.0,
+                                     rho=0.2, verbose=False)
+    
+    # retornar suma de predicciones
+    return Y_pred_occ + Y_pred_ori
         
-        
-        
-    
-    
-    
-    
-    

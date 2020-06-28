@@ -9,6 +9,7 @@ v1.0 - update, Aug 01 2019
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
+import matplotlib
 
 import numpy as np
 from scipy.stats import binned_statistic
@@ -401,7 +402,7 @@ def plot_power_irradiance(db_pv, db_solar, start_date, stop_date):
     
 #------------------------------------------------------------------------------
 # obtener secuencia de imágenes satelitales
-def plot_goes16_secuence(dataset, start_date, stop_date, cols=5):
+def plot_goes16_secuence(dataset, start_date, stop_date, cols=2):
     """
     -> None
     
@@ -436,11 +437,11 @@ def plot_goes16_secuence(dataset, start_date, stop_date, cols=5):
     
     # plotear imágenes --------------------------------------------------------
     # obtener tamaño de las imágenes
-    img_size = int( np.sqrt(dataset.shape[1] - 1) )
+    img_size = int( np.sqrt(dataset.shape[1] - 3) )
     
     # obtener cantidad de imágenes a plotear
     img_num = stop_index - start_index
-    rows = np.ceil( img_num/cols )
+    rows = int(np.ceil( img_num/cols ))
     
     # inicializar canvas
     canvas = np.zeros((img_size*rows, img_size*cols))
@@ -451,20 +452,26 @@ def plot_goes16_secuence(dataset, start_date, stop_date, cols=5):
             index = start_index + cols*i + j
             # si la imagen es parte de la secuencia
             if index < stop_index:
-                frame = np.float32( dataset.iloc[index, 1:].values )
+                frame = np.float32( dataset.iloc[index, 3:].values )
                 frame = np.reshape(frame, (img_size, img_size))
+                f_min = np.min(frame, axis=None)
+                f_max = np.max(frame, axis=None)
+                frame = (frame - f_min)/(f_max - f_min)
                 
                 # agregar frame al canvas
                 canvas[i*img_size:(i+1)*img_size, j*img_size:(j+1)*img_size] = frame
     
     # plotear
-    plt.imshow(canvas)
+    fig = plt.figure()
+    plt.imshow(canvas, cmap='viridis')
+    plt.xticks([])
+    plt.yticks([])
     
     return None
 
 #------------------------------------------------------------------------------
 # obtener gráficos de la distribución del error
-def plot_error_dist(Y_true, Y_pred, Y_pers, horizons, **kargs): 
+def plot_error_dist(Y_true, Y_pred, pred_labels, horizons, **kargs): 
     """
     -> None
     
@@ -476,6 +483,8 @@ def plot_error_dist(Y_true, Y_pred, Y_pers, horizons, **kargs):
     :param np.array Y_pred:
         serie de valores estimados donde cada columna es un pronóstico distinto
         y cada fila corresponde a un horizonte de pronóstico.
+    :param list or array_like:
+        lista con las etiquetas de los modelos de cada seie Y_pred.
     :param np.array Y_pers:
         serie de valores estimados por el modelo de persistencia donde cada
         columna es un pronóstico distinto y cada fila corresponde a un horizonte
@@ -487,25 +496,43 @@ def plot_error_dist(Y_true, Y_pred, Y_pers, horizons, **kargs):
     
     # inicializar plot
     n_output = Y_true.shape[0]
+    matplotlib.rc('font', family='Times New Roman')
     fig, axs = plt.subplots( int(np.ceil(n_output/3)), 3 )
+    fig.set_size_inches(10, 5)
+    
+    
+    colors = ['lightgrey', 'black', 'red', 'blue']
+    line_styles = [None, '-', '-', '-']
     
     # por cada horizonte de pronóstico
     for i, h in enumerate(horizons):
-        # error
-        error = Y_pred[i,:] - Y_true[i,:]
-        error_pers = Y_pers[i,:] - Y_true[i,:]
         
-        axs[i//3, i%3].hist(error, label='model', color='lightgrey', **kargs)
-        axs[i//3, i%3].hist(error_pers, label='pers', histtype='step', color='k', **kargs)
-        
-        axs[i//3, i%3].set_title(h)
-        axs[i//3, i%3].set_xlabel('error')
-        axs[i//3, i%3].set_ylabel('frecuency')
-        axs[i//3, i%3].legend(loc='best')
+        for j in range(len(Y_pred)):
+            Y_j = Y_pred[j]
+            # error
+            error = Y_j[i,:] - Y_true[i,:]
+            
+            if j==0:
+                axs[i//3, i%3].hist(error, label=pred_labels[j],
+                                    color=colors[j], **kargs)
+            else:
+                axs[i//3, i%3].hist(error, label=pred_labels[j], histtype='step',
+                                    color=colors[j], linestyle=line_styles[j],
+                                    linewidth=1.5,
+                                    **kargs)
+            
+            axs[i//3, i%3].set_xlabel('Error')
+            axs[i//3, i%3].set_ylabel('Frecuencia')
+            axs[i//3, i%3].legend(loc='best')
+            axs[i//3, i%3].set_ylim([0.1, 10000.0])
+    
+    plt.style.use(['seaborn-white', 'seaborn-paper'])        
+    plt.tight_layout()
+    return None
         
 #------------------------------------------------------------------------------
 # obtener gráficos de la distribución del error
-def plot_error_variability(Y_true, Y_pred, cs_var, horizons, **kargs): 
+def plot_error_variability(Y_true, Y_pred, data_labels, cs_var, horizons, **kargs): 
     """
     -> None
     
@@ -528,7 +555,13 @@ def plot_error_variability(Y_true, Y_pred, cs_var, horizons, **kargs):
     
     # inicializar plot
     n_output = Y_true.shape[0]
+    matplotlib.rc('font', family='Times New Roman')
     fig, axs = plt.subplots( int(np.ceil(n_output/3)), 3 )
+    fig.set_size_inches(10, 5)
+    
+    colors = ['black', 'grey', 'red', 'blue']
+    markers = ['v', 'o', '^', 's']
+    linestyles = ['-','-','--','-.']
     
     cs_var = np.nan_to_num( cs_var.flatten() )
     
@@ -538,27 +571,40 @@ def plot_error_variability(Y_true, Y_pred, cs_var, horizons, **kargs):
     
     # por cada horizonte de pronóstico
     for i, h in enumerate(horizons):
-        # error
-        error = np.abs( Y_pred[i,:] - Y_true[i,:] ).flatten()
-        error = error[cs_var<=var_xlim]
         
-        # obtener bin means
-        bin_means, bin_edges, binnumber = binned_statistic(x, error, bins=15)
-        bin_width = (bin_edges[1] - bin_edges[0])
-        bin_centers = bin_edges[1:] - bin_width/2
-        
-        # obtener límites del error
-        #err_ylim = np.quantile(error, 0.999)
-        
-        axs[i//3, i%3].scatter(x, error, label='model', c='k', **kargs)
-        axs[i//3, i%3].plot(bin_centers, bin_means, c='r')
-        
-        axs[i//3, i%3].set_xlim([1e-6, var_xlim])
-        axs[i//3, i%3].set_ylim([0.0, 0.3])
-        
-        axs[i//3, i%3].set_title(h)
-        axs[i//3, i%3].set_xlabel('clearsky variabilty')
-        axs[i//3, i%3].set_ylabel('absolute error')
+        for j in range(len(Y_pred)):
+            # error
+            Y_j = Y_pred[j]
+            error = np.abs( Y_j[i,:] - Y_true[i,:] ).flatten()
+            error = error[cs_var<=var_xlim]
+            
+            # obtener bin means
+            bin_means, bin_edges, binnumber = binned_statistic(x, error, bins=10)
+            bin_width = (bin_edges[1] - bin_edges[0])
+            bin_centers = bin_edges[1:] - bin_width/2
+            
+            # obtener límites del error
+            #err_ylim = np.quantile(error, 0.999)
+            if j==0:
+                axs[i//3, i%3].scatter(x, error, c='k', s=0.08)
+                axs[i//3, i%3].plot(bin_centers, bin_means, label=data_labels[j],
+                                    color=colors[j], marker=markers[j],
+                                    linestyle=linestyles[j])
+            else:
+                axs[i//3, i%3].plot(bin_centers, bin_means, label=data_labels[j],
+                                    color=colors[j], marker=markers[j],
+                                    linestyle=linestyles[j])
+            
+            axs[i//3, i%3].set_xlim([1e-6, var_xlim])
+            axs[i//3, i%3].set_ylim([0.0, 0.3])
+            
+            axs[i//3, i%3].set_xlabel('Variabilidad atmosférica')
+            axs[i//3, i%3].set_ylabel('Error absoluto')
+            axs[i//3, i%3].legend(loc='best')
+    
+    plt.style.use(['seaborn-white', 'seaborn-paper'])        
+    plt.tight_layout()
+    return None
     
     
     

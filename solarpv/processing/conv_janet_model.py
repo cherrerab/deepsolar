@@ -28,12 +28,12 @@ import pandas as pd
 
 # -----------------------------------------------------------------------------
 # cargar datos del sistema
-sys_dataset_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\processed\\dat_syst_30min_s20180827_e20190907.pkl'
+sys_dataset_path = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/processed/dat_syst_30min_s20180827_e20190907.pkl'
 sys_dataset = pd.read_pickle(sys_dataset_path)
 
 # -----------------------------------------------------------------------------
 # cargar datos del goes16
-g16_dataset_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\processed\\dat_syst_30min_s20180827_e20190907.pkl'
+g16_dataset_path = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/processed/dat_noaa_30min_s20180827_e20190907.pkl'
 g16_dataset = pd.read_pickle(g16_dataset_path)
 
 #%% setup dataset -------------------------------------------------------------
@@ -47,7 +47,7 @@ from solarpv.database import img_standard_scaling
 # setup time windows
 n_input = 12
 n_output = 6
-overlap = 3
+overlap = 1
 
 # setup data splitting
 train_days = 8
@@ -68,7 +68,7 @@ X_g16_train, X_g16_test = setup_convlstm_dataset(g16_dataset,
 # -----------------------------------------------------------------------------
 # normalización
 X_train, X_test, std_scaler = lstm_standard_scaling(X_train, X_test)
-X_g16_train, X_g16_test, _ = img_standard_scaling(X_g16_train, X_g16_test)
+X_g16_train, X_g16_test, g16_scaler = img_standard_scaling(X_g16_train, X_g16_test, clip=0.99)
 
 # reshape dataset
 n_feature = X_train.shape[2]
@@ -80,7 +80,7 @@ feature_max = std_scaler[0, 1]
 Y_train = (Y_train - feature_min)/(feature_max-feature_min)
 Y_test = (Y_test - feature_min)/(feature_max-feature_min)
 
-#%% train model
+#%% setup model
 import keras
 from keras.models import Model
 from keras.layers import Input
@@ -91,58 +91,81 @@ from keras.layers import Flatten
 from keras.layers import ConvLSTM2D
 from keras.layers import BatchNormalization
 from keras.layers import Concatenate
+from keras.layers import MaxPooling3D
 
 from solarpv.layers import ConvJANet
+from solarpv.layers import JANet
+
+from solarpv.model import build_lstm_conv_model
 
 from keras.optimizers import Adam
-
+from keras.optimizers import RMSprop
 
 from keras.utils import np_utils
 from keras.utils import plot_model
 
-import matplotlib.pyplot as plt
+lstm_type = JANet
+lstm_layers_1 = 2; lstm_units_1 = 128; lstm_activation_1 = 'relu'
+dense_layers_1 = 2; dense_units_1 = 128; dense_activation_1 = 'relu'
+dense_layers_2 = 1; dense_units_2 = 128; dense_activation_2 = 'relu'
+dense_layers_3 = 1; dense_units_3 = 128; dense_activation_3 = 'relu'
 
-# inicializamos la LSTM que trabaja con los datos -----------------------------
-input_data = Input( shape=(n_input, n_feature) )
+conv_type = ConvJANet
+conv_layers_1 = 1; conv_filters_1 = 8; conv_activation_1 = 'relu'
+conv_layers_2 = 2; conv_filters_2 = 16; conv_activation_2 = 'relu'
+conv_layers_3 = 2; conv_filters_3 = 16; conv_activation_3 = 'relu'
+dense_layers_4 = 1; dense_units_4 = 96; dense_activation_4 = 'sigmoid'
 
-# añadimos las capas de procesamiento
-data_model = LSTM(units = 128, return_sequences = True)(input_data)
-data_model = LSTM(units = 128, return_sequences = True)(data_model)
-data_model = Dropout(rate = 0.2)(data_model)
+dense_layers_5 = 5; dense_units_5 = 64; dense_activation_5 = 'relu'
 
-data_model = Dense(units = 128, activation = 'relu')(data_model)
-data_model = Dropout(rate = 0.2)(data_model)
+optimizer = Adam
+learning_rate = 0.001
 
-data_model = Dense(units = 128, activation = 'relu')(data_model)
-data_model = Dense(units = 64, activation = 'relu')(data_model)
-data_model = Dropout(rate = 0.2)(data_model)
+dropout_rate = 0.2
 
-# añadimos las capas de salida
-data_model = Flatten()(data_model)
-output_data = Dense(units = 64, activation = 'relu')(data_model)
+forecasting_model = build_lstm_conv_model(n_input, n_output, n_feature, img_size,
+                                          lstm_type, conv_type,
+                                          lstm_layers_1, lstm_units_1, lstm_activation_1,
+                                          dense_layers_1, dense_units_1, dense_activation_1,
+                                          dense_layers_2, dense_units_2, dense_activation_2,
+                                          dense_layers_3, dense_units_3, dense_activation_3,
+                                          conv_layers_1, conv_filters_1, conv_activation_1,
+                                          conv_layers_2, conv_filters_2, conv_activation_2,
+                                          conv_layers_3, conv_filters_3, conv_activation_3,
+                                          dense_layers_4, dense_units_4, dense_activation_4,
+                                          dense_layers_5, dense_units_5, dense_activation_5,
+                                          dropout_rate)
 
-# inicializamos la LSTM que trabaja con las imágenes --------------------------
-input_goes16 = Input( shape=(n_input, img_size, img_size, 1) )
+forecasting_model.compile(optimizer=optimizer(lr=learning_rate), loss = 'mse', metrics = ['mae'])
+forecasting_model.summary()
 
-# añadimos las capas de procesamiento
-goes16_model = ConvJANet(filters=8, kernel_size=(3, 3),
-                         padding='same', return_sequences=True)(input_goes16)
-goes16_model = BatchNormalization()(goes16_model)
+#%% train model
+from keras.callbacks import ModelCheckpoint
+from keras.callbacks import ReduceLROnPlateau
+from datetime import datetime
+import os
 
-goes16_model = ConvJANet(filters=8, kernel_size=(3, 3),
-                         padding='same', return_sequences=True)(goes16_model)
-goes16_model = BatchNormalization()(goes16_model)
+batch_size = 128
+epochs = 200
 
-# añadimos las capas de salida
-goes16_model = Flatten()(goes16_model)
-output_goes16 = Dense(units = 512, activation = 'relu')(goes16_model)
+# model name
+current_time = datetime.now()
+current_str = current_time.strftime('%Y%m%d%H%M%S')
+lstm_name = 'JANet' if lstm_type==JANet else 'LSTM'
+conv_name = 'ConvJANet' if conv_type==ConvJANet else 'ConvLSTM'
+model_name = lstm_name + '_' + conv_name + '_c' + current_str
 
-# concatenamos los modelos para el modelo final
-concat_layer = Concatenate()([output_data, output_goes16])
-output_layer = Dense(units = n_output, activation = 'linear')(concat_layer)
+# callback
+dir_path = '/home/hecate/Desktop/models/sys_g16_models'
+file_name = model_name + '.h5'
+save_path = os.path.join(dir_path, file_name)
 
-forecasting_model = Model(inputs = [input_data, input_goes16], outputs = output_layer)
+model_checkpoint = ModelCheckpoint(save_path, save_best_only=True, monitor='val_loss')
 
-# configuramos el modelo de optimizacion a utilizar
-optimizer_adam = Adam(lr=0.0001)
-forecasting_model.compile(optimizer = optimizer_adam, loss = 'mse', metrics = ['mae'])
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6)
+
+# entrenamos el modelo
+model_history = forecasting_model.fit([X_train, X_g16_train], Y_train,
+                                      batch_size=batch_size, epochs=epochs,
+                                      validation_data = ([X_test, X_g16_test], Y_test),
+                                      callbacks=[model_checkpoint, reduce_lr])

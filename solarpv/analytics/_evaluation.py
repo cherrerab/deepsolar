@@ -9,6 +9,8 @@ v1.0 - update, Aug 01 2019
 
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
+import matplotlib
 import random
 
 from datetime import datetime, timedelta
@@ -18,7 +20,7 @@ import pandas as pd
 from solarpv._tools import validate_date, get_timestep, get_date_index
 
 from solarpv.analytics import cluster_daily_radiation, clearsky_variability
-from solarpv.analytics import persistence_predict
+from solarpv.analytics import beauchef_pers_predict
 from solarpv.analytics import mean_squared_error, mean_absolute_error, mean_bias_error
 from solarpv.analytics import skew_error, kurtosis_error, forecast_skill
 from solarpv.analytics import plot_error_dist, plot_error_variability
@@ -62,7 +64,10 @@ def forecast_pred(datasets, output_name, model, forecast_date,
     date_index = get_date_index( system_ds['Timestamp'], forecast_date)
     
     # obtener ventana de tiempo
-    n_input = int(model.input.shape[1])
+    try:
+        n_input = int(model.input.shape[1])
+    except AttributeError:
+        n_input = int(model.input[0].shape[1])
     n_output = int(model.output.shape[1])
     
     start_index = date_index - n_input
@@ -86,7 +91,7 @@ def forecast_pred(datasets, output_name, model, forecast_date,
     for i, ds in enumerate(datasets):
         X_data = ds.iloc[start_index:end_index]
         if i == img_sequence:
-            X_ds, _ = img_sequence_dataset(X_data, n_input, n_output, n_input+n_output)
+            X_ds = img_sequence_dataset(X_data, n_input, n_output, n_input+n_output)
         else:
             X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
         X.append(X_ds)
@@ -103,7 +108,7 @@ def forecast_pred(datasets, output_name, model, forecast_date,
 # obtener gráficos de predicción en cuatro días distintos al azar
 def plot_forecast_pred(datasets, output_name, model, forecast_date,
                        img_sequence=-1,
-                       hours=['10:00','13:00','16:00','19:00'],
+                       hours=['10:00','13:00','16:00','21:00'],
                        time_margin=12, title=''):
     """
     -> None
@@ -135,10 +140,15 @@ def plot_forecast_pred(datasets, output_name, model, forecast_date,
     system_ds = datasets[0]
     
     # incializar plot
+    matplotlib.rc('font', family='Times New Roman')
     fig, axs = plt.subplots(2, 2)
-    fig.suptitle(title)
+    fig.set_size_inches(6, 4)
+    
     # obtener input/output del modelo
-    n_input = int(model.input.shape[1])
+    try:
+        n_input = int(model.input.shape[1])
+    except AttributeError:
+        n_input = int(model.input[0].shape[1])
     n_output = int(model.output.shape[1])
     
     # obtener timestamps de forecasting
@@ -170,7 +180,7 @@ def plot_forecast_pred(datasets, output_name, model, forecast_date,
         for i, ds in enumerate(datasets):
             X_data = ds.iloc[start_index:end_index]
             if i == img_sequence:
-                X_ds, _ = img_sequence_dataset(X_data, n_input, n_output, n_input+n_output)
+                X_ds = img_sequence_dataset(X_data, n_input, n_output, n_input+n_output)
             else:
                 X_ds, _ = time_window_dataset(X_data, output_name, n_input, n_output, n_input+n_output, ['Timestamp'])
             X.append(X_ds)
@@ -191,17 +201,20 @@ def plot_forecast_pred(datasets, output_name, model, forecast_date,
         axs[ix[0], ix[1]].plot(T_X, X[0][0,:,0], 'o-', c=[0.050383, 0.029803, 0.527975])
         axs[ix[0], ix[1]].plot(T_Y, Y_pred,'o-', c=[0.798216, 0.280197, 0.469538])
         
-        axs[ix[0], ix[1]].set_ylabel('PV Yield kW_avg')
-        axs[ix[0], ix[1]].set_xlabel('data points')
+        axs[ix[0], ix[1]].set_ylabel('Potencia normalizada')
+        axs[ix[0], ix[1]].set_xlabel('Número de medición')
         
         axs[ix[0], ix[1]].set_ylim([0.0, 1.0])
         axs[ix[0], ix[1]].set_ylim([0.0, 1.0])
+    
+    plt.style.use(['seaborn-white', 'seaborn-paper'])
+    plt.tight_layout()
     
     return None
 
 #------------------------------------------------------------------------------
 # obtener plot de estimación Y_test vs Y_pred
-def plot_forecast_accuracy(Y_true, Y_pred, title='', **kargs):
+def plot_forecast_accuracy(Y_true, Y_pred, timestamps=None, title='', **kargs):
     """
     -> None
     
@@ -213,6 +226,8 @@ def plot_forecast_accuracy(Y_true, Y_pred, title='', **kargs):
         set de datos reales con los cuales comparar el forecasting.
     :param DataFrame Y_pred:
         set de datos obtenidos con el modelo.
+    :param array-like timestamps:
+        set de timestamps para colorear los puntos de acuerdo a la hora del día.
     :param str title:
         titulo a poner en el plot.
         
@@ -221,14 +236,34 @@ def plot_forecast_accuracy(Y_true, Y_pred, title='', **kargs):
     """
     
     # reordenar datos
-    Y_true = np.reshape(np.array(Y_true), (-1, 1))
-    Y_pred = np.reshape(np.array(Y_pred), (-1, 1))
+    Y_true = np.array(Y_true).flatten()
+    Y_pred = np.array(Y_pred).flatten()
+    
+    # obtener colores
+    if timestamps is not None:
+        date_format = '%d-%m-%Y %H:%M'
+        
+        cmap = cm.get_cmap('plasma')
+        colors = []
+        for t in timestamps:
+            # obtener minuto del día
+            date = datetime.strptime(t, date_format)
+            date_tt = date.timetuple()
+            min_day = date_tt.tm_hour*60.0 + date_tt.tm_min
+            
+            t_x = 1 - min_day/(24*60.0)
+            # asignar color
+            colors.append(cmap(t_x))
+    else:
+        colors = 'k'
     
     # inicializar plot
-    plt.figure()
+    matplotlib.rc('font', family='Times New Roman')
+    fig = plt.figure()
+    fig.set_size_inches(6, 3)
     
     # plotear Y_true vs Y_pred
-    plt.scatter(Y_true, Y_pred, c=[0.050383, 0.029803, 0.527975],**kargs)
+    plt.scatter(Y_true, Y_pred, c=colors,**kargs)
     
     # plotear linea 1:1
     plt.plot([0, 1], [0, 1], c='k')
@@ -237,15 +272,52 @@ def plot_forecast_accuracy(Y_true, Y_pred, title='', **kargs):
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     
-    plt.title(title)
-    plt.xlabel('Y_true')
-    plt.ylabel('Y_pred')
+    #plt.title(title)
+    plt.xlabel('Potencia real normalizada')
+    plt.ylabel('Potencia predicha normalizada')
+    
+    plt.style.use(['seaborn-white', 'seaborn-paper'])
+    plt.tight_layout()
+    
+    return None
+    
+def plot_forecast_accuracy_v2(Y_true, Y_pred, **kargs):
+    
+     # inicializar plot
+    matplotlib.rc('font', family='Times New Roman')
+    font = {'fontname':'Times New Roman'}
+    n_output = Y_true.shape[0]
+    fig, axs = plt.subplots( int(np.ceil(n_output/3)), 3 )
+    fig.set_size_inches(10, 5)
+     
+    colors = 'black'
+    
+    # por cada horizonte de pronóstico
+    for i in range(n_output):
+        axs[i//3, i%3].scatter
+        
+        # plotear Y_true vs Y_pred
+        axs[i//3, i%3].scatter(Y_true[i,:], Y_pred[i,:], c=colors,**kargs)
+        
+        # plotear linea 1:1
+        axs[i//3, i%3].plot([0, 1], [0, 1], c='k')
+        
+        # añadir limites
+        axs[i//3, i%3].set_xlim([0, 1])
+        axs[i//3, i%3].set_ylim([0, 1])
+        
+        axs[i//3, i%3].set_xlabel('Potencia real normalizada',**font)
+        axs[i//3, i%3].set_ylabel('Potencia predicha normalizada', **font)
+        
+    plt.style.use(['seaborn-white', 'seaborn-paper'])    
+    plt.tight_layout()
+    return None
     
     
 #------------------------------------------------------------------------------
 # evaluar forecast_model
 def forecast_model_evaluation(datasets, output_name, model, data_leap,
-                              cluster_labels=[], img_sequence=None,
+                              cluster_labels=None, img_sequence=None,
                               plot_results=True, random_state=0,
                               save_path=None):
     """
@@ -303,7 +375,7 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
     n_output = int(model.output.shape[1])
     
     # checkear cluster_labels
-    if  not cluster_labels:
+    if  cluster_labels is None:
         cluster_labels = np.zeros([1, dates.size]).flatten()
         num_labels = np.max(cluster_labels) + 1
         
@@ -325,6 +397,7 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
         cluster_data = []
         cluster_pred = []
         cluster_pers = []
+        cluster_time = []
         
         # por cada una de las fechas del cluster
         for date in cluster_dates:
@@ -342,7 +415,7 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
                     Y_true, Y_pred = forecast_pred(datasets, output_name, model, pred_time, img_sequence=img_sequence)
                     
                     # prediccion del persistence model
-                    Y_pers = persistence_predict(system_ds, pred_time, n_output)
+                    Y_pers = beauchef_pers_predict(system_ds, pred_time, n_output)
                     
                     # print progress
                     print('\revaluating cluster ' + str(int(label)) + ': ' + pred_time, end='')
@@ -354,11 +427,13 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
                 cluster_data.append(Y_true)
                 cluster_pred.append(Y_pred)
                 cluster_pers.append(Y_pers)
+                cluster_time.append([pred_time]*n_output)
         
         # calcular metricas del cluster
         Y_true = np.concatenate(cluster_data, axis=None)
         Y_pred = np.concatenate(cluster_pred, axis=None)
         Y_pers = np.concatenate(cluster_pers, axis=None)
+        Y_time = np.concatenate(cluster_time, axis=None)
         
         eval_metrics.at[label, 'mbe'] = mean_bias_error(Y_true, Y_pred)
         eval_metrics.at[label, 'mae'] = mean_absolute_error(Y_true, Y_pred)
@@ -372,7 +447,7 @@ def forecast_model_evaluation(datasets, output_name, model, data_leap,
         plot_forecast_pred(datasets, output_name, model, cluster_sample, img_sequence=img_sequence, title=plot_title)
         
         # plot gráfico estimación
-        plot_forecast_accuracy(Y_true, Y_pred, title=plot_title, s=0.1)
+        plot_forecast_accuracy(Y_true, Y_pred, timestamps=Y_time, title=plot_title, s=0.1)
       
     return eval_metrics
 
@@ -434,11 +509,14 @@ def forecast_error_evaluation(datasets, output_name, model, data_leap,
     print('cluster evaluation summary')
     print('-'*80 + '\n')
     
-    n_input = int(model.input.shape[1])
+    try:
+        n_input = int(model.input.shape[1])
+    except AttributeError:
+        n_input = int(model.input[0].shape[1])
     n_output = int(model.output.shape[1])
     
     # checkear cluster_labels
-    if  not cluster_labels:
+    if  cluster_labels is None:
         cluster_labels = np.zeros([1, dates.size]).flatten()
         num_labels = np.max(cluster_labels) + 1
         
@@ -483,7 +561,7 @@ def forecast_error_evaluation(datasets, output_name, model, data_leap,
                                                    verbose=False)
                     
                     # prediccion del persistence model
-                    Y_pers = persistence_predict(system_ds, pred_time, n_output, ['Inversor 1'])
+                    Y_pers = beauchef_pers_predict(system_ds, pred_time, n_output)
                     
                     # clearsky variability
                     cs_var = clearsky_variability(system_ds, pred_time, n_input)
@@ -623,8 +701,3 @@ def cluster_evaluation(solar_database, datasets, output_name, model,
     
     print(cluster_metrics)    
     return cluster_metrics
-
-
-
-                
-                

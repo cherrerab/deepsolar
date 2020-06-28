@@ -10,7 +10,7 @@ from solarpv.database import radiance_to_radiation
 
 # -----------------------------------------------------------------------------
 # sma_system 15min data
-sma_powr_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\sma\\sma_powr_15min_s20180827_e20190923.pkl'
+sma_powr_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/sma/sma_powr_15min_s20180827_e20190923.pkl'
 sma_powr_15min_dataset = pd.read_pickle(sma_powr_15min_path)
 sma_powr_15min_dataset = select_date_range(sma_powr_15min_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -20,7 +20,7 @@ sma_powr_30min_dataset = adjust_timestamps(sma_powr_30min_dataset, 15*60)
 
 # -----------------------------------------------------------------------------
 # sma_sensor 15min data
-sma_temp_15min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\sma\\sma_temp_15min_s20180827_e20190923.pkl'
+sma_temp_15min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/sma/sma_temp_15min_s20180827_e20190923.pkl'
 sma_temp_15min_dataset = pd.read_pickle(sma_temp_15min_path)
 sma_temp_15min_dataset = select_date_range(sma_temp_15min_dataset, '27-08-2018 04:15', '07-09-2019 00:00')
 
@@ -30,11 +30,11 @@ sma_temp_30min_dataset = adjust_timestamps(sma_temp_30min_dataset, 15*60)
 
 # -----------------------------------------------------------------------------
 # cargar datos solarimétricos
-sol_radG_01min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\solarimetric\\sol_radG_01min_s20170703_e20190907.pkl'
+sol_radG_01min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/solarimetric/sol_radG_01min_s20170703_e20190907.pkl'
 sol_radG_01min_dataset = pd.read_pickle(sol_radG_01min_path)
 sol_radG_01min_dataset = select_date_range(sol_radG_01min_dataset, '27-08-2018 04:01', '07-09-2019 00:00')
 
-sol_radI_01min_path = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\solarimetric\\sol_radI_01min_s20170703_e20190907.pkl'
+sol_radI_01min_path = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/solarimetric/sol_radI_01min_s20170703_e20190907.pkl'
 sol_radI_01min_dataset = pd.read_pickle(sol_radI_01min_path)
 sol_radI_01min_dataset = select_date_range(sol_radI_01min_dataset, '27-08-2018 04:01', '07-09-2019 00:00')
 
@@ -112,7 +112,7 @@ for i in dataset_15min.index:
 #%% save 15min dataset
 import os
 
-save_dir = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\processed'
+save_dir = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/processed'
 
 save_path = os.path.join(save_dir, 'dat_syst_15min_s20180827_e20190907.pkl')
 dataset_15min.to_pickle(save_path)
@@ -180,7 +180,7 @@ for i in dataset_30min.index:
 #%% save 15min dataset
 import os
 
-save_dir = 'C:\\Users\\Cristian\\Desktop\\BEAUCHEF PV FORECASTING\\datasets\\datasets_pkl\\processed'
+save_dir = '/media/hecate/Seagate Backup Plus Drive/datasets/datasets_pkl/processed'
 
 save_path = os.path.join(save_dir, 'dat_syst_30min_s20180827_e20190907.pkl')
 dataset_30min.to_pickle(save_path)

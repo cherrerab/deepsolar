@@ -115,7 +115,7 @@ def img_sequence_dataset(dataset, n_input, n_output, overlap):
     n_data = dataset.shape[0]
         
     # obtener tamaño de las imágenes
-    img_size = int( np.sqrt(dataset.shape[1] - 1) )
+    img_size = int( np.sqrt(dataset.shape[1] - 3) )
     
     # -------------------------------------------------------------------------
     # obtener cantidad de ventanas temporales que se construiran
@@ -131,7 +131,7 @@ def img_sequence_dataset(dataset, n_input, n_output, overlap):
     for i in np.arange( n_windows ):
         # por cada frame de la secuencia
         for j in np.arange( n_input ):
-            frame = dataset.iloc[k*i + j, 1:].values
+            frame = dataset.iloc[k*i + j, 3:].values
             frame = np.float32(frame)
             X[i, j, :, :, :] = np.reshape(frame, (img_size, img_size, 1))
     
@@ -397,7 +397,7 @@ def lstm_standard_scaling(X_train, X_test):
 
 # -----------------------------------------------------------------------------
 # normalizar sets de datos de entrenamiento y validación (X_train, X_test)
-def img_standard_scaling(X_train, X_test):
+def img_standard_scaling(X_train, X_test, clip=1.0):
     """
     -> numpy.array, numpy.array
     
@@ -419,6 +419,12 @@ def img_standard_scaling(X_train, X_test):
     
     X_train = np.nan_to_num(X_train)
     X_test = np.nan_to_num(X_test)
+    
+    # clip
+    clip_max = np.quantile(X_train, clip)
+    clip_min = 0.0
+    X_train = np.clip(X_train, clip_min, clip_max)
+    X_test = np.clip(X_test, clip_min, clip_max)
     
     # inicializar set de parámetros para normalizar
     std_scaler = np.zeros((1, 2))
