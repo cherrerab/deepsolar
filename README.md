@@ -1,4 +1,4 @@
-# DeepSolar: A Deep Learning Approach for Short-Term Solar Forecasting Based on GOES-16 ABI images
+# ConvJANet: A Deep Learning Approach for Short-Term Solar Forecasting Based on GOES-16 ABI images
 
 Este módulo comprende la implementación de una arquitectura dual JANet-ConvJANet para el pronóstico de generación eléctrica de un sistema fotovoltaico en función de la serie temporal de datos operacionales y la secuencia de imágenes satelitales geoestacionarias del GOES-16 de la NOAA.
 
